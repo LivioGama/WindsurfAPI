@@ -155,30 +155,54 @@ nav .nav-cta:hover{background:var(--coral-deep);color:#fff}
 .model-card[data-provider="zhipu"]{--provider-color:#3B82F6}
 .model-card[data-provider="windsurf"]{--provider-color:#6B6556}
 
-/* ── Architecture ── */
-.arch-frame{background:var(--paper);border:1px solid var(--rule);border-radius:12px;padding:2.5rem 2rem;margin-top:1.5rem;overflow-x:auto;position:relative}
-.arch-frame::before{content:"";position:absolute;inset:0;border-radius:12px;pointer-events:none;background:radial-gradient(ellipse at 45% 50%,rgba(204,120,92,.04),transparent 60%)}
-.arch-svg{width:100%;height:auto;max-width:960px;margin:0 auto;display:block}
-.arch-legend{display:flex;gap:1.2rem;flex-wrap:wrap;justify-content:center;margin-top:1.5rem;font-size:.82rem;color:var(--muted)}
-.arch-legend span{display:inline-flex;align-items:center;gap:.4rem}
-.arch-legend .bullet{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-@keyframes arch-draw{from{stroke-dashoffset:200}to{stroke-dashoffset:0}}
-@keyframes arch-glow{0%,100%{opacity:.15}50%{opacity:.4}}
-@keyframes arch-packet{0%{offset-distance:0%;opacity:0}8%{opacity:1}92%{opacity:1}100%{offset-distance:100%;opacity:0}}
-@keyframes arch-fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.arch-svg .arch-node{opacity:0;animation:arch-fadein .5s ease forwards}
-.arch-svg .arch-node:nth-child(1){animation-delay:.1s}
-.arch-svg .arch-node:nth-child(2){animation-delay:.35s}
-.arch-svg .arch-node:nth-child(3){animation-delay:.6s}
-.arch-svg .arch-node:nth-child(4){animation-delay:.85s}
-.arch-svg .arch-line{stroke-dasharray:200;animation:arch-draw 1.2s ease forwards}
-.arch-svg .arch-line:nth-of-type(1){animation-delay:.3s}
-.arch-svg .arch-line:nth-of-type(2){animation-delay:.55s}
-.arch-svg .arch-line:nth-of-type(3){animation-delay:.8s}
-.arch-svg .arch-packet{animation:arch-packet 3s cubic-bezier(.4,0,.6,1) infinite}
-.arch-svg .arch-packet:nth-of-type(2){animation-delay:1s}
-.arch-svg .arch-packet:nth-of-type(3){animation-delay:2s}
-.arch-svg .arch-center-glow{animation:arch-glow 3s ease-in-out infinite}
+/* ── Architecture (dark immersive) ── */
+.arch-section{background:#151210;color:#E8E2D4;padding:5rem 0 4rem;position:relative;overflow:hidden}
+.arch-section::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,rgba(204,120,92,.08),transparent 65%),radial-gradient(ellipse at 20% 80%,rgba(139,111,176,.04),transparent 50%);pointer-events:none}
+.arch-section .kicker{color:#CC785C;opacity:.9}
+.arch-section .section-title{color:#E8E2D4}
+.arch-section .section-title em{color:#CC785C}
+.arch-section .section-sub{color:#8C8578}
+.arch-canvas{position:relative;margin-top:2rem;min-height:520px}
+@media(max-width:860px){.arch-canvas{min-height:auto}}
+.arch-row{display:flex;align-items:center;justify-content:center;gap:0;position:relative;padding:0 1rem}
+@media(max-width:860px){.arch-row{flex-direction:column;gap:2rem}}
+.arch-nd{position:relative;text-align:center;z-index:2;flex-shrink:0}
+.arch-nd-box{border:1px solid rgba(232,226,212,.12);border-radius:16px;padding:1.4rem 1.6rem;background:rgba(30,27,23,.8);backdrop-filter:blur(8px);transition:border-color .3s,box-shadow .3s}
+.arch-nd:hover .arch-nd-box{border-color:rgba(204,120,92,.3);box-shadow:0 0 30px -10px rgba(204,120,92,.15)}
+.arch-nd-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto .7rem;font-size:1.2rem;border:1px solid rgba(232,226,212,.1)}
+.arch-nd-label{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:#8C8578;margin-bottom:.3rem}
+.arch-nd-title{font-family:var(--serif);font-size:1.05rem;font-weight:500;color:#E8E2D4;margin-bottom:.2rem}
+.arch-nd-sub{font-size:.75rem;color:#6B6556;line-height:1.5}
+.arch-nd.hero-node .arch-nd-box{border-color:rgba(204,120,92,.35);background:rgba(204,120,92,.06);padding:1.8rem 2rem}
+.arch-nd.hero-node .arch-nd-icon{width:56px;height:56px;border-radius:14px;background:rgba(204,120,92,.12);border-color:rgba(204,120,92,.3);font-size:1.5rem}
+.arch-nd.hero-node .arch-nd-title{font-size:1.3rem;color:#fff}
+.arch-hero-glow{position:absolute;width:280px;height:280px;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(204,120,92,.12) 0%,transparent 70%);animation:a-pulse 4s ease-in-out infinite;pointer-events:none;z-index:0}
+@keyframes a-pulse{0%,100%{transform:translate(-50%,-50%) scale(.9);opacity:.6}50%{transform:translate(-50%,-50%) scale(1.15);opacity:1}}
+.arch-conn{flex:1;min-width:40px;height:40px;position:relative;display:flex;align-items:center;z-index:1}
+@media(max-width:860px){.arch-conn{min-width:0;width:2px;min-height:40px;height:40px;flex:0;flex-direction:column;justify-content:center}}
+.arch-conn-line{position:absolute;top:50%;left:0;right:0;height:2px;background:linear-gradient(90deg,rgba(204,120,92,.08),rgba(204,120,92,.25),rgba(204,120,92,.08))}
+@media(max-width:860px){.arch-conn-line{top:0;bottom:0;left:50%;width:2px;height:100%;background:linear-gradient(180deg,rgba(204,120,92,.08),rgba(204,120,92,.25),rgba(204,120,92,.08))}}
+.arch-conn-dot{position:absolute;width:6px;height:6px;border-radius:50%;background:#CC785C;box-shadow:0 0 8px 2px rgba(204,120,92,.4);animation:a-flow 2.5s ease-in-out infinite}
+@media(max-width:860px){.arch-conn-dot{animation-name:a-flow-v}}
+.arch-conn:nth-of-type(2) .arch-conn-dot{animation-delay:.6s}
+.arch-conn:nth-of-type(3) .arch-conn-dot{animation-delay:1.2s}
+@keyframes a-flow{0%{left:0;opacity:0}10%{opacity:1}90%{opacity:1}100%{left:calc(100% - 6px);opacity:0}}
+@keyframes a-flow-v{0%{top:0;opacity:0}10%{opacity:1}90%{opacity:1}100%{top:calc(100% - 6px);opacity:0}}
+.arch-conn-proto{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:.65rem;color:#6B6556;letter-spacing:.06em;white-space:nowrap;background:rgba(21,18,16,.8);padding:0 .4rem}
+@media(max-width:860px){.arch-conn-proto{top:50%;left:calc(50% + 14px);transform:translateY(-50%) translateX(0)}}
+.arch-features{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-top:2.5rem;max-width:680px;margin-left:auto;margin-right:auto}
+@media(max-width:600px){.arch-features{grid-template-columns:repeat(2,1fr)}}
+.arch-ft{display:flex;align-items:center;gap:.5rem;padding:.6rem .8rem;border-radius:10px;border:1px solid rgba(232,226,212,.07);background:rgba(30,27,23,.5);transition:all .25s;cursor:default}
+.arch-ft:hover{border-color:rgba(204,120,92,.25);background:rgba(204,120,92,.05);transform:translateY(-1px)}
+.arch-ft-dot{width:6px;height:6px;border-radius:50%;background:#CC785C;flex-shrink:0;box-shadow:0 0 6px rgba(204,120,92,.4)}
+.arch-ft-text{font-size:.78rem;color:#A09888;font-family:var(--sans)}
+.arch-ft:hover .arch-ft-text{color:#E8E2D4}
+.arch-ft-desc{font-size:.65rem;color:#6B6556;margin-top:.1rem}
+.arch-flow-label{text-align:center;margin-top:2rem;font-size:.72rem;color:#6B6556;font-family:var(--mono);letter-spacing:.08em;display:flex;align-items:center;justify-content:center;gap:.8rem}
+.arch-flow-label .arr{display:inline-flex;align-items:center;gap:.3rem}
+.arch-flow-label .arr::before{content:"";width:24px;height:1px}
+.arch-flow-label .arr.req::before{background:linear-gradient(90deg,transparent,#CC785C)}
+.arch-flow-label .arr.res::before{background:linear-gradient(90deg,transparent,#8B6FB0)}
 
 /* ── Dashboard ── */
 .dashboard-section{background:var(--bg-alt)}
@@ -413,98 +437,119 @@ footer{border-top:1px solid var(--rule);padding:3rem 0 2.5rem;margin-top:2rem}
 </section>
 
 <!-- ── Architecture ── -->
-<section id="architecture">
+<section id="architecture" class="arch-section">
   <div class="container">
     <div class="reveal">
       <div class="kicker">架構 · Architecture</div>
       <h2 class="section-title">中間多一層，<em>全都接住</em>。</h2>
-      <p class="section-sub">請求進來後經過協定翻譯、帳號池選號、語言伺服器轉 gRPC，最後到 Windsurf 雲端。</p>
+      <p class="section-sub">請求從客戶端出發，經過協定翻譯、帳號池選號、工具仿真、路徑淨化，再由語言伺服器轉成 Protobuf 送到 Windsurf 雲端。回應原路返回，流式解析後交付。</p>
     </div>
 
-    <div class="arch-frame reveal">
-      <svg class="arch-svg" viewBox="0 0 960 260" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="ag1" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#CC785C" stop-opacity=".1"/><stop offset="100%" stop-color="#CC785C" stop-opacity=".6"/></linearGradient>
-          <linearGradient id="ag2" x1="100%" y1="0%" x2="0%" y2="0%"><stop offset="0%" stop-color="#CC785C" stop-opacity=".6"/><stop offset="100%" stop-color="#CC785C" stop-opacity=".1"/></linearGradient>
-          <filter id="aglow"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <path id="pf1" d="M155 125 C200 125 255 125 300 125"/>
-          <path id="pf2" d="M455 125 C500 125 555 125 600 125"/>
-          <path id="pf3" d="M755 125 C790 125 835 125 870 125"/>
-        </defs>
+    <div class="arch-canvas reveal">
+      <div class="arch-row">
+        <!-- Node 1: Client -->
+        <div class="arch-nd">
+          <div class="arch-nd-box">
+            <div class="arch-nd-icon" style="background:rgba(232,226,212,.06);color:#E8E2D4">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="14" rx="2"/><path d="M7 21h10M12 17v4"/></svg>
+            </div>
+            <div class="arch-nd-label">Client</div>
+            <div class="arch-nd-title">IDE / CLI</div>
+            <div class="arch-nd-sub">Claude Code · Cursor<br>Cline · OpenAI SDK</div>
+          </div>
+        </div>
 
-        <!-- Center glow -->
-        <ellipse class="arch-center-glow" cx="378" cy="130" rx="120" ry="70" fill="#CC785C" opacity=".15" filter="url(#aglow)"/>
+        <!-- Connection 1 -->
+        <div class="arch-conn">
+          <div class="arch-conn-line"></div>
+          <div class="arch-conn-dot"></div>
+          <div class="arch-conn-proto">HTTP · SSE</div>
+        </div>
 
-        <!-- Client -->
-        <g class="arch-node">
-          <rect x="20" y="85" width="135" height="80" rx="12" fill="#FFFFFF" stroke="#E7E2D4" stroke-width="1.5"/>
-          <text x="88" y="110" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#A09888" letter-spacing=".08em">CLIENT</text>
-          <text x="88" y="130" text-anchor="middle" font-family="Georgia,serif" font-size="13.5" fill="#1A1612" font-weight="500">Claude Code</text>
-          <text x="88" y="148" text-anchor="middle" font-family="Georgia,serif" font-size="12" fill="#6B6556">Cursor · Cline</text>
-        </g>
+        <!-- Node 2: Windsurf API (HERO) -->
+        <div class="arch-nd hero-node">
+          <div class="arch-hero-glow"></div>
+          <div class="arch-nd-box">
+            <div class="arch-nd-icon" style="background:rgba(204,120,92,.15);color:#CC785C">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="arch-nd-label">Node.js Proxy</div>
+            <div class="arch-nd-title">Windsurf API</div>
+            <div class="arch-nd-sub">協定翻譯 · 帳號池輪詢<br>工具仿真 · 上下文複用<br>速率限制 · 故障轉移</div>
+          </div>
+        </div>
 
-        <!-- Windsurf API (center, highlighted) -->
-        <g class="arch-node">
-          <rect x="300" y="75" width="155" height="100" rx="12" fill="#FBF1EB" stroke="#CC785C" stroke-width="2"/>
-          <text x="378" y="100" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#A05234" letter-spacing=".1em">NODE.JS PROXY</text>
-          <text x="378" y="122" text-anchor="middle" font-family="Georgia,serif" font-size="15" fill="#1A1612" font-weight="600">Windsurf API</text>
-          <text x="378" y="140" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-size="9.5" fill="#6B6556">帳號池 · 協定翻譯</text>
-          <text x="378" y="155" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-size="9.5" fill="#6B6556">速率限制 · 工具仿真</text>
-          <text x="378" y="168" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-size="9.5" fill="#6B6556">SOCKS5 · 故障轉移</text>
-        </g>
+        <!-- Connection 2 -->
+        <div class="arch-conn">
+          <div class="arch-conn-line"></div>
+          <div class="arch-conn-dot"></div>
+          <div class="arch-conn-proto">Protobuf · gRPC</div>
+        </div>
 
-        <!-- Language Server -->
-        <g class="arch-node">
-          <rect x="600" y="85" width="155" height="80" rx="12" fill="#FFFFFF" stroke="#E7E2D4" stroke-width="1.5"/>
-          <text x="678" y="110" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#A09888" letter-spacing=".08em">BINARY · gRPC</text>
-          <text x="678" y="130" text-anchor="middle" font-family="Georgia,serif" font-size="13.5" fill="#1A1612" font-weight="500">Language</text>
-          <text x="678" y="148" text-anchor="middle" font-family="Georgia,serif" font-size="13.5" fill="#1A1612" font-weight="500">Server</text>
-        </g>
+        <!-- Node 3: Language Server -->
+        <div class="arch-nd">
+          <div class="arch-nd-box">
+            <div class="arch-nd-icon" style="background:rgba(232,226,212,.06);color:#A09888">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M6 14h12"/></svg>
+            </div>
+            <div class="arch-nd-label">Binary · gRPC</div>
+            <div class="arch-nd-title">Language Server</div>
+            <div class="arch-nd-sub">Windsurf LS 二進位<br>Proto 序列化 / 反序列化</div>
+          </div>
+        </div>
 
-        <!-- Cloud -->
-        <g class="arch-node">
-          <rect x="870" y="90" width="75" height="70" rx="12" fill="#FAF9F5" stroke="#A09888" stroke-width="1.5"/>
-          <text x="908" y="115" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#A09888" letter-spacing=".06em">HTTPS</text>
-          <text x="908" y="133" text-anchor="middle" font-family="Georgia,serif" font-size="12.5" fill="#1A1612" font-weight="500">Windsurf</text>
-          <text x="908" y="149" text-anchor="middle" font-family="Georgia,serif" font-size="12.5" fill="#1A1612" font-weight="500">Cloud</text>
-        </g>
+        <!-- Connection 3 -->
+        <div class="arch-conn">
+          <div class="arch-conn-line"></div>
+          <div class="arch-conn-dot"></div>
+          <div class="arch-conn-proto">TLS · HTTPS</div>
+        </div>
 
-        <!-- Connection lines (animate draw) -->
-        <line class="arch-line" x1="155" y1="122" x2="300" y2="122" stroke="url(#ag1)" stroke-width="2"/>
-        <line class="arch-line" x1="455" y1="122" x2="600" y2="122" stroke="url(#ag1)" stroke-width="2"/>
-        <line class="arch-line" x1="755" y1="122" x2="870" y2="122" stroke="url(#ag1)" stroke-width="2"/>
-        <!-- Return flow -->
-        <line x1="300" y1="132" x2="155" y2="132" stroke="url(#ag2)" stroke-width="1.5" opacity=".4" stroke-dasharray="3 4"/>
+        <!-- Node 4: Cloud -->
+        <div class="arch-nd">
+          <div class="arch-nd-box">
+            <div class="arch-nd-icon" style="background:rgba(139,111,176,.08);color:#8B6FB0">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 10a6 6 0 00-11.3-2A4.5 4.5 0 005 17h13a4 4 0 100-7z"/></svg>
+            </div>
+            <div class="arch-nd-label">Upstream</div>
+            <div class="arch-nd-title">Windsurf Cloud</div>
+            <div class="arch-nd-sub">Cascade AI 引擎<br>107+ 模型推理</div>
+          </div>
+        </div>
+      </div>
 
-        <!-- Flow packets -->
-        <circle class="arch-packet" r="4" fill="#CC785C" opacity=".8" style="offset-path:path('M155 122 C227 122 228 122 300 122')"/>
-        <circle class="arch-packet" r="4" fill="#CC785C" opacity=".8" style="offset-path:path('M455 122 C527 122 528 122 600 122')"/>
-        <circle class="arch-packet" r="4" fill="#CC785C" opacity=".8" style="offset-path:path('M755 122 C812 122 813 122 870 122')"/>
+      <!-- Feature modules fanning out from center -->
+      <div class="arch-features reveal">
+        <div class="arch-ft">
+          <span class="arch-ft-dot"></span>
+          <div><div class="arch-ft-text">雙協定翻譯</div><div class="arch-ft-desc">OpenAI ↔ Anthropic ↔ Cascade</div></div>
+        </div>
+        <div class="arch-ft">
+          <span class="arch-ft-dot"></span>
+          <div><div class="arch-ft-text">多帳號池</div><div class="arch-ft-desc">輪詢 · 故障轉移 · 自動封禁偵測</div></div>
+        </div>
+        <div class="arch-ft">
+          <span class="arch-ft-dot"></span>
+          <div><div class="arch-ft-text">工具仿真</div><div class="arch-ft-desc">Prompt 注入 · 三格式解析</div></div>
+        </div>
+        <div class="arch-ft">
+          <span class="arch-ft-dot"></span>
+          <div><div class="arch-ft-text">上下文複用</div><div class="arch-ft-desc">Fingerprint 池 · Cascade 會話快取</div></div>
+        </div>
+        <div class="arch-ft">
+          <span class="arch-ft-dot"></span>
+          <div><div class="arch-ft-text">安全淨化</div><div class="arch-ft-desc">路徑剝離 · SSRF 防護 · Proto 截斷檢測</div></div>
+        </div>
+        <div class="arch-ft">
+          <span class="arch-ft-dot"></span>
+          <div><div class="arch-ft-text">SOCKS5 · Docker</div><div class="arch-ft-desc">每帳號獨立代理 · 容器化部署</div></div>
+        </div>
+      </div>
 
-        <!-- Protocol labels -->
-        <text x="228" y="112" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#A09888">HTTP / SSE</text>
-        <text x="528" y="112" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#A09888">Protobuf</text>
-        <text x="813" y="112" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9.5" fill="#A09888">TLS</text>
-
-        <!-- Feature tags below center -->
-        <g opacity=".7">
-          <rect x="175" y="200" width="80" height="22" rx="4" fill="#FBF1EB" stroke="#CC785C" stroke-width=".7"/>
-          <text x="215" y="215" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="9" fill="#A05234">雙協定</text>
-          <rect x="268" y="200" width="80" height="22" rx="4" fill="#FBF1EB" stroke="#CC785C" stroke-width=".7"/>
-          <text x="308" y="215" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="9" fill="#A05234">多帳號池</text>
-          <rect x="361" y="200" width="80" height="22" rx="4" fill="#FBF1EB" stroke="#CC785C" stroke-width=".7"/>
-          <text x="401" y="215" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="9" fill="#A05234">工具仿真</text>
-          <rect x="454" y="200" width="80" height="22" rx="4" fill="#FBF1EB" stroke="#CC785C" stroke-width=".7"/>
-          <text x="494" y="215" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="9" fill="#A05234">上下文複用</text>
-          <rect x="547" y="200" width="80" height="22" rx="4" fill="#FBF1EB" stroke="#CC785C" stroke-width=".7"/>
-          <text x="587" y="215" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="9" fill="#A05234">路徑淨化</text>
-          <rect x="640" y="200" width="80" height="22" rx="4" fill="#FBF1EB" stroke="#CC785C" stroke-width=".7"/>
-          <text x="680" y="215" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="9" fill="#A05234">Docker</text>
-        </g>
-      </svg>
-      <div class="arch-legend">
-        <span><span class="bullet" style="background:#CC785C"></span>請求 → 回應流</span>
-        <span><span class="bullet" style="background:#FBF1EB;border:1.5px solid #CC785C"></span>本專案核心</span>
+      <div class="arch-flow-label reveal">
+        <span class="arr req">請求流</span>
+        <span style="color:#4A433B">·</span>
+        <span class="arr res">回應流</span>
       </div>
     </div>
   </div>
