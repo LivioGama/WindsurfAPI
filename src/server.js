@@ -109,8 +109,6 @@ async function route(req, res) {
   }
 
   // ─── Dashboard ─────────────────────────────────────────
-  // Silent 204 for favicon — browsers request it from every page; otherwise
-  // the later Bearer-token check produces noise in the dashboard console.
   if (path === '/favicon.ico') {
     res.writeHead(204);
     return res.end();

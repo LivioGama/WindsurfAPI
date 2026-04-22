@@ -2,7 +2,7 @@
 # Install / update the Windsurf language server binary.
 #
 # Usage:
-#   ./install-ls.sh                        # install latest from Exafunction/codeium
+#   ./install-ls.sh                        # auto: our release → Exafunction fallback
 #   ./install-ls.sh /path/to/local.bin     # install a local file
 #   ./install-ls.sh --file /path/to.bin    # same as above
 #   ./install-ls.sh --url <direct-url>     # install from a custom URL
@@ -11,6 +11,7 @@
 # Override install path with LS_INSTALL_PATH env var.
 set -euo pipefail
 
+OUR_RELEASE='https://github.com/dwgx/WindsurfAPI/releases/latest/download'
 EXAFUNCTION_API='https://api.github.com/repos/Exafunction/codeium/releases/latest'
 
 log() { echo -e "\033[1;34m==>\033[0m $*"; }
@@ -60,21 +61,30 @@ elif [[ $# -ge 2 && "$1" == "--url" ]]; then
   log "Downloading from: $url"
   curl -fL --progress-bar -o "$TARGET" "$url"
 else
-  log "Fetching latest Exafunction/codeium release tag..."
-  if command -v jq >/dev/null 2>&1; then
-    url="$(curl -fsSL "$EXAFUNCTION_API" | jq -r \
-      --arg asset "$ASSET" '.assets[] | select(.name == $asset) | .browser_download_url')"
+  # Try our own GitHub release first (newer than Exafunction)
+  our_url="${OUR_RELEASE}/${ASSET}"
+  log "Trying WindsurfAPI release: $our_url"
+  if curl -fL --progress-bar -o "$TARGET" "$our_url" 2>/dev/null; then
+    log "Downloaded from WindsurfAPI release"
   else
-    url="$(curl -fsSL "$EXAFUNCTION_API" | \
-      grep -oE "https://[^\"]+/${ASSET}" | head -1)"
+    log "Not found in our release, falling back to Exafunction..."
+    if command -v jq >/dev/null 2>&1; then
+      url="$(curl -fsSL "$EXAFUNCTION_API" | jq -r \
+        --arg asset "$ASSET" '.assets[] | select(.name == $asset) | .browser_download_url')"
+    else
+      url="$(curl -fsSL "$EXAFUNCTION_API" | \
+        grep -oE "https://[^\"]+/${ASSET}" | head -1)"
+    fi
+    if [[ -z "$url" ]]; then
+      err "Could not find asset '$ASSET' in any release."
+      err "Download manually from Windsurf desktop app:"
+      err "  macOS: ~/Library/Application Support/Windsurf/.../bin/$ASSET"
+      err "  Linux: ~/.windsurf/bin/$ASSET"
+      exit 1
+    fi
+    log "Downloading: $url"
+    curl -fL --progress-bar -o "$TARGET" "$url"
   fi
-  if [[ -z "$url" ]]; then
-    err "Could not find asset '$ASSET' in latest release."
-    err "Visit https://github.com/Exafunction/codeium/releases and download manually."
-    exit 1
-  fi
-  log "Downloading: $url"
-  curl -fL --progress-bar -o "$TARGET" "$url"
 fi
 
 chmod +x "$TARGET"
@@ -88,7 +98,6 @@ else
 fi
 log "Installed: $TARGET ($size, sha256:$sha...)"
 
-# Remind about .env
 if [[ "$os" == "Darwin" ]]; then
   log ""
   log "macOS users: set this in your .env:"
