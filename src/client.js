@@ -231,37 +231,33 @@ export class WindsurfClient {
       // OpenAI tools are serialized into a '<tool_call>{...}</tool_call>'
       // emission contract there). This function just stitches system + u/a
       // turns into the single text payload Cascade accepts.
+      // Always pack full history — Cascade server does NOT reliably keep
+      // per-cascade context across turns, so even reuse mode must send the
+      // complete conversation. Reuse only saves the StartCascade RPC. (#24)
       let text;
       let images = [];
-      if (reuseEntry?.cascadeId) {
-        const lastUser = [...messages].reverse().find(m => m.role === 'user');
-        const extracted = await extractImages(lastUser?.content ?? '');
+      const systemMsgs = messages.filter(m => m.role === 'system');
+      const convo = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+      const sysText = systemMsgs.map(m => contentToString(m.content)).join('\n').trim();
+
+      if (convo.length <= 1) {
+        const last = convo[convo.length - 1];
+        const extracted = await extractImages(last?.content ?? '');
         text = extracted.text;
         images = extracted.images;
       } else {
-        const systemMsgs = messages.filter(m => m.role === 'system');
-        const convo = messages.filter(m => m.role === 'user' || m.role === 'assistant');
-        const sysText = systemMsgs.map(m => contentToString(m.content)).join('\n').trim();
-
-        if (convo.length <= 1) {
-          const last = convo[convo.length - 1];
-          const extracted = await extractImages(last?.content ?? '');
-          text = extracted.text;
-          images = extracted.images;
-        } else {
-          const lines = [];
-          for (let i = 0; i < convo.length - 1; i++) {
-            const m = convo[i];
-            const label = m.role === 'user' ? 'User' : 'Assistant';
-            lines.push(`${label}: ${contentToString(m.content)}`);
-          }
-          const latest = convo[convo.length - 1];
-          const extracted = await extractImages(latest?.content ?? '');
-          text = `[Conversation so far]\n${lines.join('\n\n')}\n\n[Current user message]\n${extracted.text}`;
-          images = extracted.images;
+        const lines = [];
+        for (let i = 0; i < convo.length - 1; i++) {
+          const m = convo[i];
+          const label = m.role === 'user' ? 'User' : 'Assistant';
+          lines.push(`${label}: ${contentToString(m.content)}`);
         }
-        if (sysText) text = sysText + '\n\n' + text;
+        const latest = convo[convo.length - 1];
+        const extracted = await extractImages(latest?.content ?? '');
+        text = `[Conversation so far]\n${lines.join('\n\n')}\n\n[Current user message]\n${extracted.text}`;
+        images = extracted.images;
       }
+      if (sysText) text = sysText + '\n\n' + text;
       if (images.length) log.info(`Cascade: attaching ${images.length} image(s) to field 6`);
 
       // Step 2: Send message (retry once on panel-state-not-found)
