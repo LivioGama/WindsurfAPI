@@ -335,6 +335,40 @@ export class ToolCallStreamParser {
         const leading = this.buffer.match(/^\s*/)[0];
         const afterLeading = this.buffer.slice(leading.length);
 
+        // Variant: <tool_call>NAME{"arg":...} — function name written bare
+        // right after the open tag, followed by a JSON args object (no
+        // `{"name":...,"arguments":...}` wrapper, no closing tag guaranteed).
+        // Seen from SWE-1.x when large opencode-style tool schemas are in play.
+        const nameMatch = afterLeading.match(/^([A-Za-z_][A-Za-z0-9_.-]*)\s*\{/);
+        if (nameMatch) {
+          const name = nameMatch[1];
+          const braceOffset = nameMatch[0].length - 1;
+          const savedBuffer = this.buffer;
+          this.buffer = afterLeading.slice(braceOffset);
+          const endIdx = this._findClosingBrace();
+          if (endIdx === -1) { this.buffer = savedBuffer; break; }
+          const body = this.buffer.slice(0, endIdx + 1);
+          this.buffer = this.buffer.slice(endIdx + 1);
+          const trimmedRest = this.buffer.replace(/^\s+/, '');
+          if (trimmedRest.startsWith(TC_CLOSE)) {
+            this.buffer = trimmedRest.slice(TC_CLOSE.length);
+          }
+          this.inToolCall = false;
+          const parsedArgs = safeParseJson(body);
+          if (parsedArgs && typeof parsedArgs === 'object') {
+            log.debug(`ToolParser: matched xml(name-prefix) format, name=${name}`);
+            doneCalls.push({
+              id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
+              name,
+              argumentsJson: JSON.stringify(parsedArgs),
+            });
+            this._totalSeen++;
+          } else {
+            safeParts.push(`<tool_call>${name}${body}`);
+          }
+          continue;
+        }
+
         if (afterLeading.startsWith('{')) {
           const savedBuffer = this.buffer;
           this.buffer = afterLeading;

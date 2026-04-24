@@ -84,6 +84,40 @@ describe('ToolCallStreamParser', () => {
     const allCalls = [...r.toolCalls, ...flush.toolCalls];
     assert.equal(allCalls.length, 2);
   });
+
+  it('parses <tool_call>NAME{args} variant (name-prefix, no closer)', () => {
+    const parser = new ToolCallStreamParser();
+    const r = parser.feed('<tool_call>read{"filePath":"./foo.txt"}');
+    const flush = parser.flush();
+    const allCalls = [...r.toolCalls, ...flush.toolCalls];
+    assert.equal(allCalls.length, 1, `expected 1 call, got ${allCalls.length}`);
+    assert.equal(allCalls[0].name, 'read');
+    assert.equal(JSON.parse(allCalls[0].argumentsJson).filePath, './foo.txt');
+    const combined = r.text + flush.text;
+    assert.ok(!combined.includes('<tool_call>'), `leaked tag: ${combined}`);
+  });
+
+  it('parses <tool_call>NAME{args}</tool_call> variant (name-prefix, with closer)', () => {
+    const parser = new ToolCallStreamParser();
+    const r = parser.feed('before<tool_call>write_file{"path":"a","content":"b"}</tool_call>after');
+    const flush = parser.flush();
+    const allCalls = [...r.toolCalls, ...flush.toolCalls];
+    assert.equal(allCalls.length, 1);
+    assert.equal(allCalls[0].name, 'write_file');
+    const combined = r.text + flush.text;
+    assert.ok(combined.includes('before') && combined.includes('after'));
+    assert.ok(!combined.includes('<tool_call>'));
+  });
+
+  it('handles multiple <tool_call>NAME{args} back-to-back', () => {
+    const parser = new ToolCallStreamParser();
+    const r = parser.feed('<tool_call>list{"path":"a"}<tool_call>list{"path":"b"}');
+    const flush = parser.flush();
+    const allCalls = [...r.toolCalls, ...flush.toolCalls];
+    assert.equal(allCalls.length, 2);
+    assert.equal(JSON.parse(allCalls[0].argumentsJson).path, 'a');
+    assert.equal(JSON.parse(allCalls[1].argumentsJson).path, 'b');
+  });
 });
 
 describe('parseToolCallsFromText', () => {
