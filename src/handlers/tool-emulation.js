@@ -226,6 +226,16 @@ export function normalizeMessagesForCascade(messages, tools) {
  */
 const TOOL_PARSE_MODE = process.env.TOOL_PARSE_MODE || 'auto';
 
+// SWE-1.x sometimes emits orphan Cascade-native XML markup (<arg_name>...,
+// <arg_value>..., <parameters>, etc.) alongside the canonical <tool_call>
+// JSON blocks. Strip these artifacts from plain-text deltas so clients don't
+// render stray tags.
+const CASCADE_ARTIFACT_RE = /<\/?(?:arg_name|arg_value|parameters|parameter|tool_name|invoke|function_calls|think|thinking|thought|reasoning)(?:\s[^>]*)?>/g;
+function stripCascadeArtifacts(text) {
+  if (!text) return text;
+  return text.replace(CASCADE_ARTIFACT_RE, '');
+}
+
 export class ToolCallStreamParser {
   constructor() {
     this.buffer = '';
@@ -327,7 +337,104 @@ export class ToolCallStreamParser {
       }
 
       // ── Inside a <tool_call>…</tool_call> block — parse JSON body ──
+      // SWE-1.x models often emit `<tool_call>{...}` WITHOUT the `</tool_call>`
+      // closer, concatenating the next `<tool_call>` or plain text right after
+      // the JSON's closing brace. We accept both forms: if the body starts with
+      // `{`, close on the matching `}` (and consume an optional trailing closer).
       if (this.inToolCall) {
+        const leading = this.buffer.match(/^\s*/)[0];
+        const afterLeading = this.buffer.slice(leading.length);
+
+        if (afterLeading.startsWith('{')) {
+          const savedBuffer = this.buffer;
+          this.buffer = afterLeading;
+          const endIdx = this._findClosingBrace();
+          if (endIdx === -1) { this.buffer = savedBuffer; break; }
+          const body = this.buffer.slice(0, endIdx + 1);
+          this.buffer = this.buffer.slice(endIdx + 1);
+          const trimmedRest = this.buffer.replace(/^\s+/, '');
+          if (trimmedRest.startsWith(TC_CLOSE)) {
+            this.buffer = trimmedRest.slice(TC_CLOSE.length);
+          }
+          this.inToolCall = false;
+          const parsed = safeParseJson(body);
+          if (parsed && typeof parsed.name === 'string') {
+            const args = parsed.arguments;
+            const argsJson = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+            log.debug(`ToolParser: matched xml(json-body) format, name=${parsed.name}`);
+            doneCalls.push({
+              id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
+              name: parsed.name,
+              argumentsJson: argsJson,
+            });
+            this._totalSeen++;
+          } else {
+            safeParts.push(`<tool_call>${body}`);
+          }
+          continue;
+        }
+
+        // SWE-1.x sometimes emits `<tool_call>NAME{args}` — tool name as bare
+        // text before the JSON, no "name" key. Match an identifier followed
+        // by an arguments JSON object.
+        const nameMatch = afterLeading.match(/^([A-Za-z_][\w\-.]*)\s*(?=\{)/);
+        if (nameMatch) {
+          const savedBuffer = this.buffer;
+          const name = nameMatch[1];
+          this.buffer = afterLeading.slice(nameMatch[0].length);
+          const endIdx = this._findClosingBrace();
+          if (endIdx === -1) { this.buffer = savedBuffer; break; }
+          const argsBody = this.buffer.slice(0, endIdx + 1);
+          this.buffer = this.buffer.slice(endIdx + 1);
+          const trimmedRest = this.buffer.replace(/^\s+/, '');
+          if (trimmedRest.startsWith(TC_CLOSE)) {
+            this.buffer = trimmedRest.slice(TC_CLOSE.length);
+          }
+          this.inToolCall = false;
+          const parsedArgs = safeParseJson(argsBody) ?? {};
+          log.debug(`ToolParser: matched xml(name-then-json) format, name=${name}`);
+          doneCalls.push({
+            id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
+            name,
+            argumentsJson: JSON.stringify(parsedArgs),
+          });
+          this._totalSeen++;
+          continue;
+        }
+
+        // `<tool_call>NAME attr="value" attr2="value2"` — XML-attribute style,
+        // no JSON body. Close on the next tag-start `<` or </tool_call>.
+        const attrNameMatch = afterLeading.match(/^([A-Za-z_][\w\-.]*)\s+([A-Za-z_][\w]*\s*=)/);
+        if (attrNameMatch) {
+          const savedBuffer = this.buffer;
+          const name = attrNameMatch[1];
+          let rest = afterLeading.slice(attrNameMatch[1].length);
+          // Find where this call ends: next `<` (tag-start) marks boundary.
+          const nextTag = rest.search(/<(?:tool_call|\/tool_call)/);
+          if (nextTag === -1) { this.buffer = savedBuffer; break; }
+          const attrsChunk = rest.slice(0, nextTag);
+          rest = rest.slice(nextTag);
+          const args = {};
+          const attrRe = /([A-Za-z_][\w]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\S+))/g;
+          let am;
+          while ((am = attrRe.exec(attrsChunk)) !== null) {
+            const k = am[1];
+            const v = am[2] ?? am[3] ?? am[4] ?? '';
+            args[k] = v.replace(/\\"/g, '"').replace(/\\'/g, "'");
+          }
+          if (rest.startsWith(TC_CLOSE)) rest = rest.slice(TC_CLOSE.length);
+          this.buffer = rest;
+          this.inToolCall = false;
+          log.debug(`ToolParser: matched xml(name-then-attrs) format, name=${name}`);
+          doneCalls.push({
+            id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
+            name,
+            argumentsJson: JSON.stringify(args),
+          });
+          this._totalSeen++;
+          continue;
+        }
+
         const closeIdx = this.buffer.indexOf(TC_CLOSE);
         if (closeIdx === -1) break;
         const body = this.buffer.slice(0, closeIdx).trim();
@@ -424,7 +531,7 @@ export class ToolCallStreamParser {
       }
     }
 
-    return { text: safeParts.join(''), toolCalls: doneCalls };
+    return { text: stripCascadeArtifacts(safeParts.join('')), toolCalls: doneCalls };
   }
 
   flush() {
@@ -432,7 +539,45 @@ export class ToolCallStreamParser {
     this.buffer = '';
     if (this.inToolCall) {
       this.inToolCall = false;
-      return { text: `<tool_call>${remaining}`, toolCalls: [] };
+      // Try to salvage `<tool_call>NAME{args}` or `<tool_call>NAME attr="val"`
+      // that never got a closer or trailing `<` boundary.
+      const body = remaining.replace(/^\s+/, '');
+      const jsonNameMatch = body.match(/^([A-Za-z_][\w\-.]*)\s*(?=\{)/);
+      if (jsonNameMatch) {
+        const name = jsonNameMatch[1];
+        const rest = body.slice(jsonNameMatch[0].length);
+        const tmp = new ToolCallStreamParser();
+        tmp.buffer = rest;
+        const endIdx = tmp._findClosingBrace();
+        if (endIdx !== -1) {
+          const argsBody = rest.slice(0, endIdx + 1);
+          const parsedArgs = safeParseJson(argsBody) ?? {};
+          return { text: '', toolCalls: [{
+            id: `call_${this._totalSeen++}_${Date.now().toString(36)}`,
+            name,
+            argumentsJson: JSON.stringify(parsedArgs),
+          }] };
+        }
+      }
+      const attrNameMatch = body.match(/^([A-Za-z_][\w\-.]*)\s+([A-Za-z_][\w]*\s*=)/);
+      if (attrNameMatch) {
+        const name = attrNameMatch[1];
+        const attrsChunk = body.slice(attrNameMatch[1].length);
+        const args = {};
+        const attrRe = /([A-Za-z_][\w]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\S+))/g;
+        let am;
+        while ((am = attrRe.exec(attrsChunk)) !== null) {
+          const k = am[1];
+          const v = am[2] ?? am[3] ?? am[4] ?? '';
+          args[k] = v.replace(/\\"/g, '"').replace(/\\'/g, "'");
+        }
+        return { text: '', toolCalls: [{
+          id: `call_${this._totalSeen++}_${Date.now().toString(36)}`,
+          name,
+          argumentsJson: JSON.stringify(args),
+        }] };
+      }
+      return { text: stripCascadeArtifacts(`<tool_call>${remaining}`), toolCalls: [] };
     }
     if (this.inToolResult) {
       this.inToolResult = false;
@@ -445,9 +590,9 @@ export class ToolCallStreamParser {
         const jsonStr = remaining.slice(0, endIdx + 1);
         const tail = remaining.slice(endIdx + 1);
         const tc = this._parseToolCodeJson(jsonStr);
-        if (tc) { this._totalSeen++; return { text: tail, toolCalls: [tc] }; }
+        if (tc) { this._totalSeen++; return { text: stripCascadeArtifacts(tail), toolCalls: [tc] }; }
       }
-      return { text: remaining, toolCalls: [] };
+      return { text: stripCascadeArtifacts(remaining), toolCalls: [] };
     }
     if (this.inBareCall) {
       this.inBareCall = false;
@@ -456,9 +601,9 @@ export class ToolCallStreamParser {
         const jsonStr = remaining.slice(0, endIdx + 1);
         const tail = remaining.slice(endIdx + 1);
         const tc = this._parseBareToolCallJson(jsonStr);
-        if (tc) { this._totalSeen++; return { text: tail, toolCalls: [tc] }; }
+        if (tc) { this._totalSeen++; return { text: stripCascadeArtifacts(tail), toolCalls: [tc] }; }
       }
-      return { text: remaining, toolCalls: [] };
+      return { text: stripCascadeArtifacts(remaining), toolCalls: [] };
     }
     // Fallback: detect any remaining tool_code patterns in leftover buffer
     const toolCalls = [];
@@ -477,7 +622,7 @@ export class ToolCallStreamParser {
       } catch {}
       return '';
     });
-    return { text: toolCalls.length ? cleaned.trim() : remaining, toolCalls };
+    return { text: stripCascadeArtifacts(toolCalls.length ? cleaned.trim() : remaining), toolCalls };
   }
 }
 
