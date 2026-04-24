@@ -1,11 +1,16 @@
 /**
- * HTTP/2 gRPC client for the local Windsurf language server binary.
+ * HTTP/2 client for the local Windsurf language server binary.
+ * Supports both gRPC and Connect-RPC protocols.
  *
- * Uses Node.js built-in http2 module. No external dependencies.
+ * GRPC_PROTOCOL=connect (default) — matches real Windsurf client fingerprint.
+ * GRPC_PROTOCOL=grpc — legacy mode, original gRPC framing.
  */
 
 import http2 from 'http2';
 import { log } from './config.js';
+import { wrapRequest, StreamingFrameParser } from './connect.js';
+
+const USE_CONNECT = process.env.GRPC_PROTOCOL === 'connect';
 
 // ─── HTTP/2 session pool ───────────────────────────────────
 //
@@ -58,13 +63,15 @@ export function closeSessionForPort(port) {
 }
 
 /**
- * Wrap a protobuf payload in a gRPC frame.
- * Format: 1 byte compression (0) + 4 bytes BE length + payload
+ * Wrap a protobuf payload for transport.
+ * Connect mode: gzip-compressed connect envelope.
+ * gRPC mode: uncompressed gRPC frame.
  */
 export function grpcFrame(payload) {
   const buf = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  if (USE_CONNECT) return wrapRequest(buf);
   const frame = Buffer.alloc(5 + buf.length);
-  frame[0] = 0; // no compression
+  frame[0] = 0;
   frame.writeUInt32BE(buf.length, 1);
   buf.copy(frame, 5);
   return frame;
@@ -131,20 +138,24 @@ export function grpcUnary(port, csrfToken, path, body, timeout = 30000) {
       done(reject, new Error('gRPC unary timeout'));
     }, timeout);
 
-    const req = client.request({
+    const headers = USE_CONNECT ? {
+      ':method': 'POST',
+      ':path': path,
+      'content-type': 'application/connect+proto',
+      'connect-protocol-version': '1',
+      'connect-accept-encoding': 'gzip',
+      'user-agent': 'connect-es/2.0.0',
+      'x-codeium-csrf-token': csrfToken,
+    } : {
       ':method': 'POST',
       ':path': path,
       'content-type': 'application/grpc',
       'te': 'trailers',
-      // Match the official Go Windsurf client so upstream fingerprinting
-      // doesn't flag the unary channel separately from the stream one.
-      // grpcStream already sends this header; aligning unary closes the
-      // remaining gap (see project_antiproxy_fingerprint.md item: gRPC
-      // user-agent).
       'user-agent': 'grpc-node/1.108.2',
       'x-codeium-csrf-token': csrfToken,
-    });
+    };
 
+    const req = client.request(headers);
     req.on('data', (chunk) => chunks.push(chunk));
 
     let grpcStatus = '0', grpcMessage = '';
@@ -156,21 +167,34 @@ export function grpcUnary(port, csrfToken, path, body, timeout = 30000) {
 
     req.on('end', () => {
       clearTimeout(timer);
-      if (grpcStatus !== '0') {
+      if (!USE_CONNECT && grpcStatus !== '0') {
         const msg = grpcMessage ? decodeURIComponent(grpcMessage) : `gRPC status ${grpcStatus}`;
         done(reject, new Error(msg));
         return;
       }
-      // A unary response is "usually" one frame, but nothing in the gRPC
-      // spec or nghttp2 prevents the server from splitting across frames.
-      // stripGrpcFrame() only returns the first frame — use
-      // extractGrpcFrames() + concat so a chunked proto isn't silently
-      // truncated. Falls back to stripGrpcFrame if extract finds nothing
-      // (preserves old behavior for short / malformed responses).
       const full = Buffer.concat(chunks);
-      const frames = extractGrpcFrames(full);
-      const payload = frames.length > 0 ? Buffer.concat(frames) : stripGrpcFrame(full);
-      done(resolve, payload);
+
+      if (USE_CONNECT) {
+        const parser = new StreamingFrameParser();
+        parser.push(full);
+        const parsed = parser.drain();
+        const dataFrames = parsed.filter(f => !f.isEndStream);
+        const trailer = parsed.find(f => f.isEndStream);
+        if (trailer) {
+          try {
+            const t = JSON.parse(trailer.payload.toString());
+            if (t.error) { done(reject, new Error(t.error.message || 'connect error')); return; }
+          } catch {}
+        }
+        const payload = dataFrames.length > 0
+          ? Buffer.concat(dataFrames.map(f => f.payload))
+          : full;
+        done(resolve, payload);
+      } else {
+        const frames = extractGrpcFrames(full);
+        const payload = frames.length > 0 ? Buffer.concat(frames) : stripGrpcFrame(full);
+        done(resolve, payload);
+      }
     });
 
     req.on('error', (err) => {
@@ -210,7 +234,15 @@ export function grpcStream(port, csrfToken, path, body, opts = {}) {
     onError?.(new Error('gRPC stream timeout'));
   }, timeout);
 
-  const req = client.request({
+  const streamHeaders = USE_CONNECT ? {
+    ':method': 'POST',
+    ':path': path,
+    'content-type': 'application/connect+proto',
+    'connect-protocol-version': '1',
+    'connect-accept-encoding': 'gzip',
+    'user-agent': 'connect-es/2.0.0',
+    'x-codeium-csrf-token': csrfToken,
+  } : {
     ':method': 'POST',
     ':path': path,
     'content-type': 'application/grpc',
@@ -218,10 +250,33 @@ export function grpcStream(port, csrfToken, path, body, opts = {}) {
     'grpc-accept-encoding': 'identity,gzip,deflate',
     'user-agent': 'grpc-node/1.108.2',
     'x-codeium-csrf-token': csrfToken,
-  });
+  };
+
+  const req = client.request(streamHeaders);
+  const connectParser = USE_CONNECT ? new StreamingFrameParser() : null;
 
   req.on('data', (chunk) => {
     if (settled) return;
+
+    if (USE_CONNECT) {
+      connectParser.push(chunk);
+      for (const frame of connectParser.drain()) {
+        if (frame.isEndStream) {
+          try {
+            const t = JSON.parse(frame.payload.toString());
+            if (t.error) {
+              settled = true; clearTimeout(timer);
+              onError?.(new Error(t.error.message || 'connect stream error'));
+              return;
+            }
+          } catch {}
+        } else {
+          onData?.(frame.payload);
+        }
+      }
+      return;
+    }
+
     pendingBuf = Buffer.concat([pendingBuf, chunk]);
     if (pendingBuf.length > 100 * 1024 * 1024) {
       settled = true;
@@ -234,7 +289,7 @@ export function grpcStream(port, csrfToken, path, body, opts = {}) {
     while (pendingBuf.length >= 5) {
       const compressed = pendingBuf[0];
       const msgLen = pendingBuf.readUInt32BE(1);
-      if (pendingBuf.length < 5 + msgLen) break; // wait for more data
+      if (pendingBuf.length < 5 + msgLen) break;
 
       if (compressed === 0) {
         const payload = pendingBuf.subarray(5, 5 + msgLen);
@@ -255,7 +310,7 @@ export function grpcStream(port, csrfToken, path, body, opts = {}) {
     clearTimeout(timer);
     if (settled) return;
     settled = true;
-    if (grpcStatus !== '0') {
+    if (!USE_CONNECT && grpcStatus !== '0') {
       const msg = grpcMessage ? decodeURIComponent(grpcMessage) : `gRPC status ${grpcStatus}`;
       onError?.(new Error(msg));
     } else {

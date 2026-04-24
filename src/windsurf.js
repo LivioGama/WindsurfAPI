@@ -269,7 +269,7 @@ export function buildInitializePanelStateRequest(apiKey, sessionId, trusted = tr
 }
 
 // AddTrackedWorkspaceRequest has a single field: workspace (string, filesystem path).
-export function buildAddTrackedWorkspaceRequest(apiKey, workspacePath, sessionId) {
+export function buildAddTrackedWorkspaceRequest(workspacePath) {
   return writeStringField(1, workspacePath);
 }
 

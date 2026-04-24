@@ -31,3 +31,17 @@ jobs:
             echo "Checking $f"
             node -e "JSON.parse(require('fs').readFileSync('$f'))"
           done
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run tests
+        run: node --test test/*.test.js

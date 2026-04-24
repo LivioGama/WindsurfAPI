@@ -17,11 +17,24 @@ const MAX_ENTRIES = 500;
 const _store = new Map();
 const _stats = { hits: 0, misses: 0, stores: 0, evictions: 0 };
 
+function stripBase64(messages) {
+  if (!Array.isArray(messages)) return messages;
+  return messages.map(m => {
+    if (!Array.isArray(m.content)) return m;
+    return { ...m, content: m.content.map(p => {
+      if (p.type === 'image_url' && typeof p.image_url?.url === 'string' && p.image_url.url.startsWith('data:'))
+        return { type: 'image_url', image_url: { url: '[base64]' } };
+      if (p.type === 'image' && p.source?.type === 'base64')
+        return { type: 'image', source: { type: 'base64', data: '[base64]' } };
+      return p;
+    })};
+  });
+}
+
 function normalize(body) {
-  // Only the semantically meaningful fields — ignore stream flag, user id, etc.
   return {
     model: body.model || '',
-    messages: body.messages || [],
+    messages: stripBase64(body.messages || []),
     tools: body.tools || null,
     tool_choice: body.tool_choice || null,
     temperature: body.temperature ?? null,

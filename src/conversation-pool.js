@@ -48,7 +48,7 @@ function sha256(s) {
 // (issue #24 — Claude Code users reported persistent reuse=false despite
 // PR #36's stableTurns fix because this class of drift wasn't being
 // neutralised). Strip them before hashing.
-const META_TAG_NAMES = [
+const META_TAG_NAMES = new Set([
   'system-reminder',
   'command-message',
   'command-name',
@@ -56,15 +56,18 @@ const META_TAG_NAMES = [
   'local-command-stdout',
   'local-command-stderr',
   'user-prompt-submit-hook',
-  // Captured from real Claude Code v2.1.118 traffic via META_TAG_AUDIT
   'analysis',
   'summary',
   'example',
-];
-const META_TAG_RE = new RegExp(
-  `<(${META_TAG_NAMES.join('|')})[^>]*>[\\s\\S]*?</\\1>`,
-  'g'
-);
+]);
+
+function buildMetaTagRe() {
+  return new RegExp(
+    `<(${[...META_TAG_NAMES].join('|')})[^>]*>[\\s\\S]*?</\\1>`,
+    'g'
+  );
+}
+let META_TAG_RE = buildMetaTagRe();
 
 function stripMetaTags(s) {
   if (typeof s !== 'string' || !s) return s;
@@ -73,10 +76,14 @@ function stripMetaTags(s) {
   const remaining = stripped.match(/<([a-z][-a-z_]*)[^>]*>[\s\S]*?<\/\1>/g);
   if (remaining?.length) {
     const tagNames = remaining.map(m => m.match(/^<([a-z][-a-z_]*)/)?.[1]).filter(Boolean);
-    const unknown = tagNames.filter(t => !META_TAG_NAMES.includes(t));
+    const unknown = tagNames.filter(t => !META_TAG_NAMES.has(t));
     if (unknown.length) {
-      // Import not available here — use console.error as a fallback log
       console.error(`[META_TAG_AUDIT] Unknown XML tags in user message: ${[...new Set(unknown)].join(', ')}`);
+      let added = false;
+      for (const t of unknown) {
+        if (!META_TAG_NAMES.has(t)) { META_TAG_NAMES.add(t); added = true; }
+      }
+      if (added) META_TAG_RE = buildMetaTagRe();
     }
   }
   return stripped;

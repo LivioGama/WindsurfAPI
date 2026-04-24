@@ -4,19 +4,10 @@ import { initAuth, isAuthenticated, saveAccountsSync } from './auth.js';
 import { startLanguageServer, waitForReady, isLanguageServerRunning, stopLanguageServer } from './langserver.js';
 import { startServer } from './server.js';
 import { config, log } from './config.js';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { execSync } from 'child_process';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-export const BRAND = 'WindsurfAPI bydwgx1337';
-// Single source of truth: package.json. Keeps banner + /health + dashboard all in sync.
-export const VERSION = (() => {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    return JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).version;
-  } catch { return '1.0.0'; }
-})();
+import { VERSION, BRAND } from './version.js';
+export { VERSION, BRAND };
 
 async function main() {
   const banner = `
@@ -36,6 +27,11 @@ async function main() {
   // and open "request crashes" issues (see #18), so we just do it ourselves.
   // Skipped on Windows (LS is Linux-only) and when install-ls.sh isn't present.
   const binaryPath = config.lsBinaryPath;
+  if (!existsSync(binaryPath) && process.platform === 'win32') {
+    log.warn('Windows detected: the Language Server binary is Linux/macOS only.');
+    log.warn('Options: (1) Use Docker (see docker-compose.yml), (2) Use WSL2, or');
+    log.warn('(3) Point LS_BINARY_PATH to a Windsurf desktop app language_server binary.');
+  }
   if (!existsSync(binaryPath) && process.platform !== 'win32') {
     const scriptPath = (() => {
       try {
@@ -66,7 +62,9 @@ async function main() {
       // via the baked-in Cascade tool prompts) persist and pollute the next
       // request — the model sees them at session init and starts narrating
       // edits to files the caller never mentioned.
-      execSync('mkdir -p /opt/windsurf/data/db /tmp/windsurf-workspace && rm -rf /tmp/windsurf-workspace/* /tmp/windsurf-workspace/.[!.]* 2>/dev/null || true', { stdio: 'ignore' });
+      const wsSuffix = process.env.HOSTNAME ? `-${process.env.HOSTNAME}` : '';
+      const wsBase = `/tmp/windsurf-workspace${wsSuffix}`;
+      execSync(`mkdir -p /opt/windsurf/data/db "${wsBase}" && rm -rf "${wsBase}"/* "${wsBase}"/.[!.]* 2>/dev/null || true`, { stdio: 'ignore' });
     } catch {}
 
     await startLanguageServer({

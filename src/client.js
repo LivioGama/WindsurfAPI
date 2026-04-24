@@ -37,6 +37,10 @@ function contentToString(content) {
   return content == null ? '' : JSON.stringify(content);
 }
 
+function escapeHistoryTag(text, tag) {
+  return text.replaceAll(`</${tag}>`, `<\\/${tag}>`);
+}
+
 /**
  * Rewrite second-person identity declarations in a client-supplied system
  * prompt to third person before the text ships in Cascade's user-message
@@ -66,6 +70,15 @@ function cascadeHistoryBudget(modelUid) {
   return normal;
 }
 
+const CASCADE_TIMEOUTS = {
+  maxWaitMs:        positiveIntEnv('CASCADE_MAX_WAIT_MS', 180_000),
+  pollIntervalMs:   positiveIntEnv('CASCADE_POLL_INTERVAL_MS', 500),
+  coldStallBaseMs:  positiveIntEnv('CASCADE_COLD_STALL_BASE_MS', 30_000),
+  warmStallMs:      positiveIntEnv('CASCADE_WARM_STALL_MS', 25_000),
+  idleGraceMs:      positiveIntEnv('CASCADE_IDLE_GRACE_MS', 8_000),
+  stallRetryMinText: positiveIntEnv('CASCADE_STALL_RETRY_MIN_TEXT', 300),
+};
+
 // ── Fake workspace scaffold ────────────────────────────────
 // A real Windsurf IDE always has a workspace directory that the LS scans
 // for git state, file tree, etc. The reverse proxy previously registered
@@ -82,11 +95,15 @@ function ensureWorkspaceDir(workspacePath) {
       mkdirSync(workspacePath, { recursive: true });
       // Seed a minimal project so the LS has something to index
       writeFileSync(`${workspacePath}/package.json`, JSON.stringify({
-        name: 'workspace', version: '1.0.0', private: true,
-        description: 'Development workspace',
+        name: 'my-project', version: '0.1.0', private: true,
+        description: 'A development project',
+        scripts: { start: 'node src/index.js', test: 'node --test' },
+        license: 'MIT',
       }, null, 2) + '\n');
-      writeFileSync(`${workspacePath}/README.md`, '# Workspace\n\nDevelopment workspace.\n');
-      writeFileSync(`${workspacePath}/.gitignore`, 'node_modules/\n.env\n');
+      writeFileSync(`${workspacePath}/README.md`, '# My Project\n\nA development project.\n\n## Getting Started\n\n```bash\nnpm start\n```\n');
+      writeFileSync(`${workspacePath}/.gitignore`, 'node_modules/\n.env\ndist/\n*.log\n');
+      mkdirSync(`${workspacePath}/src`, { recursive: true });
+      writeFileSync(`${workspacePath}/src/index.js`, '// Entry point\nconsole.log("Hello, world!");\n');
       // Init git repo so LS picks up real git state
       try {
         execSync('git init -q && git add -A && git commit -q -m "init" --allow-empty', {
@@ -217,7 +234,7 @@ export class WindsurfClient {
       } catch (e) { log.warn(`InitializeCascadePanelState: ${e.message}`); }
       try {
         ensureWorkspaceDir(workspacePath);
-        const addWsProto = buildAddTrackedWorkspaceRequest(this.apiKey, workspacePath, sessionId);
+        const addWsProto = buildAddTrackedWorkspaceRequest(workspacePath);
         await grpcUnary(this.port, this.csrfToken,
           `${LS_SERVICE}/AddTrackedWorkspace`, grpcFrame(addWsProto), 5000);
       } catch (e) { log.warn(`AddTrackedWorkspace: ${e.message}`); }
@@ -326,7 +343,7 @@ export class WindsurfClient {
         for (let i = convo.length - 2; i >= 0; i--) {
           const m = convo[i];
           const tag = m.role === 'user' ? 'human' : 'assistant';
-          const line = `<${tag}>\n${contentToString(m.content)}\n</${tag}>`;
+          const line = `<${tag}>\n${escapeHistoryTag(contentToString(m.content), tag)}\n</${tag}>`;
           if (historyBytes + line.length > maxHistoryBytes && lines.length > 0) {
             log.info(`Cascade: trimmed history at turn ${i}/${convo.length} (${Math.round(historyBytes/1024)}KB kept, ${convo.length - 2 - i} turns dropped)`);
             break;
@@ -363,7 +380,7 @@ export class WindsurfClient {
           for (let i = convo.length - 2; i >= 0; i--) {
             const m = convo[i];
             const tag = m.role === 'user' ? 'human' : 'assistant';
-            const line = `<${tag}>\n${contentToString(m.content)}\n</${tag}>`;
+            const line = `<${tag}>\n${escapeHistoryTag(contentToString(m.content), tag)}\n</${tag}>`;
             if (historyBytes + line.length > maxHistoryBytes && lines.length > 0) break;
             lines.unshift(line);
             historyBytes += line.length;
@@ -415,14 +432,7 @@ export class WindsurfClient {
       // Cascade is legitimately mid-thinking but `responseText` hasn't moved.
       let lastGrowthAt = Date.now();
       let lastStepCount = 0;
-      const maxWait = 180_000;
-      const pollInterval = 500;
-      const IDLE_GRACE_MS = 8_000;     // minimum time before idle-break allowed
-      // 25s no progress on any signal = genuine stall. Was 15s + text-only,
-      // which misfired on long thinking phases and returned tiny "Let me…"
-      // preambles as if they were complete replies.
-      const NO_GROWTH_STALL_MS = 25_000;
-      const STALL_RETRY_MIN_TEXT = 300;  // stalls shorter than this → retryable error, not partial success
+      const { maxWaitMs: maxWait, pollIntervalMs: pollInterval, idleGraceMs: IDLE_GRACE_MS, warmStallMs: NO_GROWTH_STALL_MS, stallRetryMinText: STALL_RETRY_MIN_TEXT } = CASCADE_TIMEOUTS;
       const startTime = Date.now();
       let endReason = 'unknown';
 
@@ -468,7 +478,7 @@ export class WindsurfClient {
         const elapsed = Date.now() - startTime;
         const promptChars = typeof text === 'string' ? text.length : inputChars;
         const effectiveChars = promptChars + (toolPreamble?.length ?? 0);
-        const coldStallMs = Math.min(maxWait, 30_000 + Math.floor(effectiveChars / 1500) * 5_000);
+        const coldStallMs = Math.min(maxWait, CASCADE_TIMEOUTS.coldStallBaseMs + Math.floor(effectiveChars / 1500) * 5_000);
         if (elapsed > coldStallMs && sawActive && !sawText && seenToolCallIds.size === 0) {
           log.warn(`Cascade cold stall: ${elapsed}ms active without any text or tool call (threshold=${coldStallMs}ms, promptChars=${promptChars}), bailing`);
           endReason = 'stall_cold';

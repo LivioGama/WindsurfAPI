@@ -32,9 +32,13 @@ function loadEnv() {
 
 loadEnv();
 
-const dataDir = process.env.DATA_DIR
-  ? resolve(ROOT, process.env.DATA_DIR)
-  : ROOT;
+const dataDir = (() => {
+  let base = process.env.DATA_DIR ? resolve(ROOT, process.env.DATA_DIR) : ROOT;
+  if (process.env.REPLICA_ISOLATE === '1' && process.env.HOSTNAME) {
+    base = join(base, `replica-${process.env.HOSTNAME}`);
+  }
+  return base;
+})();
 
 try {
   mkdirSync(dataDir, { recursive: true });

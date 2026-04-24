@@ -18,6 +18,8 @@
  *     so the next cascade turn can see them.
  */
 
+import { log } from '../config.js';
+
 const TOOL_PROTOCOL_HEADER = `---
 [Tool-calling context for this request]
 
@@ -222,6 +224,8 @@ export function normalizeMessagesForCascade(messages, tools) {
  * accidentally leak `<tool_ca` to the client and then open a real block on the
  * next delta.
  */
+const TOOL_PARSE_MODE = process.env.TOOL_PARSE_MODE || 'auto';
+
 export class ToolCallStreamParser {
   constructor() {
     this.buffer = '';
@@ -250,6 +254,7 @@ export class ToolCallStreamParser {
 
   _consumeJsonBlock(parseFn, doneCalls, safeParts) {
     if (this.buffer.length > 65_536) {
+      log.warn(`ToolCallStreamParser: JSON block exceeds 65KB (${this.buffer.length} bytes), emitting as text`);
       safeParts.push(this.buffer);
       this.buffer = '';
       return true;
@@ -278,6 +283,7 @@ export class ToolCallStreamParser {
     if (args.startsWith('"') && args.endsWith('"')) args = `{"input":${args}}`;
     else if (!args.startsWith('{')) args = args ? `{"input":"${args}"}` : '{}';
     const parsedArgs = safeParseJson(args) || { input: args };
+    log.debug(`ToolParser: matched tool_code format, name=${name}`);
     return {
       id: `call_tc_${this._totalSeen}_${Date.now().toString(36)}`,
       name,
@@ -290,6 +296,7 @@ export class ToolCallStreamParser {
     if (!parsed || typeof parsed.name !== 'string' || !('arguments' in parsed)) return null;
     const args = parsed.arguments;
     const argsJson = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+    log.debug(`ToolParser: matched bare json format, name=${parsed.name}`);
     return {
       id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
       name: parsed.name,
@@ -331,6 +338,7 @@ export class ToolCallStreamParser {
         if (parsed && typeof parsed.name === 'string') {
           const args = parsed.arguments;
           const argsJson = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+          log.debug(`ToolParser: matched xml format, name=${parsed.name}`);
           doneCalls.push({
             id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
             name: parsed.name,
@@ -358,10 +366,11 @@ export class ToolCallStreamParser {
       }
 
       // ── Normal mode — scan for the next opening tag ──
-      const tcIdx = this.buffer.indexOf(TC_OPEN);
+      const mode = TOOL_PARSE_MODE;
+      const tcIdx = (mode === 'auto' || mode === 'xml') ? this.buffer.indexOf(TC_OPEN) : -1;
       const trIdx = this.buffer.indexOf(TR_PREFIX);
-      const tcCodeIdx = this.buffer.indexOf(TC_CODE);
-      const tcBareIdx = this.buffer.indexOf(TC_BARE);
+      const tcCodeIdx = (mode === 'auto' || mode === 'tool_code') ? this.buffer.indexOf(TC_CODE) : -1;
+      const tcBareIdx = (mode === 'auto' || mode === 'json') ? this.buffer.indexOf(TC_BARE) : -1;
 
       let nextIdx = -1;
       let tagType = null;

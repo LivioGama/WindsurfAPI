@@ -205,12 +205,11 @@ export async function handleChatCompletions(body) {
   const displayModel = modelInfo?.name || reqModel || config.defaultModel;
   const modelEnum = modelInfo?.enumValue || 0;
   const modelUid = modelInfo?.modelUid || null;
-  // Models with a modelUid use the Cascade flow (StartCascade → SendUserCascadeMessage).
-  // Legacy RawGetChatMessage only for models with enumValue>0 and NO modelUid.
-  // Newer models (gemini-3.0, gpt-5.2, etc.) have both enumValue AND modelUid but
-  // their high enum values cause "cannot parse invalid wire-format data" in the
-  // legacy proto endpoint. Cascade handles them correctly via uid string.
-  const useCascade = !!modelUid;
+  // Cascade requires either a valid modelUid (string) or a recognized modelEnum.
+  // Legacy RawGetChatMessage is deprecated (returns empty on current LS).
+  // Models with only an old enum and no UID may fail with "neither PlanModel
+  // nor RequestedModel" — those models were removed from Windsurf upstream.
+  const useCascade = !!(modelUid || modelEnum);
 
   // Tool-call emulation: if the client passed OpenAI-style tools[], we rewrite
   // tool-result turns into synthetic user text and inject the tool protocol
@@ -349,6 +348,7 @@ export async function handleChatCompletions(body) {
             log.info(`Chat[${reqId}]: strict reuse preserved cascade; owner unavailable reason=${availability.reason}`);
             return {
               status: 429,
+              headers: { 'Retry-After': String(Math.ceil(retryAfterMs / 1000)) },
               body: {
                 error: {
                   message: strictReuseMessage(displayModel, retryAfterMs, availability.reason),
@@ -385,6 +385,7 @@ export async function handleChatCompletions(body) {
             log.info(`Chat[${reqId}]: strict reuse preserved cascade after preflight rate limit`);
             return {
               status: 429,
+              headers: { 'Retry-After': String(Math.ceil(retryAfterMs / 1000)) },
               body: {
                 error: {
                   message: strictReuseMessage(displayModel, retryAfterMs, availability.reason),
@@ -437,6 +438,7 @@ export async function handleChatCompletions(body) {
         log.info(`Chat[${reqId}]: strict reuse preserved cascade after rate limit`);
         return {
           status: 429,
+          headers: { 'Retry-After': String(Math.ceil(retryAfterMs / 1000)) },
           body: {
             error: {
               message: strictReuseMessage(displayModel, retryAfterMs, availability.reason),
@@ -459,7 +461,7 @@ export async function handleChatCompletions(body) {
       // Pair every successful getApiKey/acquireAccountByKey with a release
       // so the in-flight-count based balancer in auth.js (issue #37) stays
       // accurate across success, retry, and abort paths.
-      releaseAccount(acct.apiKey);
+      if (acct) releaseAccount(acct.apiKey);
     }
   }
   // If all accounts exhausted, check if it's because they're all rate-limited
@@ -470,7 +472,8 @@ export async function handleChatCompletions(body) {
         poolCheckin(fpBefore, checkedOutReuseEntry);
         log.info(`Chat[${reqId}]: restored checked-out cascade after rate limit`);
       }
-      return { status: 429, body: { error: { message: `${displayModel} 所有账号均已达速率限制，请 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后重试`, type: 'rate_limit_exceeded', retry_after_ms: rl.retryAfterMs } } };
+      const retryAfterSec = Math.ceil(rl.retryAfterMs / 1000);
+      return { status: 429, headers: { 'Retry-After': String(retryAfterSec) }, body: { error: { message: `${displayModel} 所有账号均已达速率限制，请 ${retryAfterSec} 秒后重试`, type: 'rate_limit_exceeded', retry_after_ms: rl.retryAfterMs } } };
     }
   }
   if (checkedOutReuseEntry && fpBefore) {
@@ -603,9 +606,11 @@ async function nonStreamResponse(client, id, created, model, modelKey, messages,
     // Rate limits → 429 with Retry-After; model errors → 403; others → 502
     if (isRateLimit) {
       const rl = isAllRateLimited(modelKey);
+      const retryMs = rl.retryAfterMs || 60000;
       return {
         status: 429,
-        body: { error: { message: `${model} 已达速率限制，请稍后重试`, type: 'rate_limit_exceeded', retry_after_ms: rl.retryAfterMs || 60000 } },
+        headers: { 'Retry-After': String(Math.ceil(retryMs / 1000)) },
+        body: { error: { message: `${model} 已达速率限制，请稍后重试`, type: 'rate_limit_exceeded', retry_after_ms: retryMs } },
       };
     }
     // LS crash on oversized payload — gRPC surfaces this as "pending stream
@@ -972,7 +977,7 @@ function streamResponse(id, created, model, modelKey, messages, cascadeMessages,
             // Pair every successful getApiKey/acquireAccountByKey with a
             // release so the in-flight balancer in auth.js (issue #37)
             // stays accurate through stream success, retry, and abort.
-            releaseAccount(acct.apiKey);
+            if (acct) releaseAccount(acct.apiKey);
           }
         }
 

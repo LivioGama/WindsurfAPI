@@ -3,18 +3,33 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: windsurf-api
+    # Remove container_name to allow Compose to scale replicas
     restart: unless-stopped
     init: true
     env_file:
       - .env
     environment:
-      PORT: ${PORT:-3003}
-      DATA_DIR: ${DATA_DIR:-/data}
+      PORT: 3003
+      DATA_DIR: /data
       LS_BINARY_PATH: /opt/windsurf/language_server_linux_x64
-    ports:
-      - "${PORT:-3003}:${PORT:-3003}"
+      REPLICA_ISOLATE: 1
+    # Do not expose ports directly when load balancing
+    expose:
+      - "3003"
     volumes:
-      - ./.docker-data/data:${DATA_DIR:-/data}
+      - ./.docker-data/data:/data
       - ./.docker-data/opt/windsurf:/opt/windsurf
       - ./.docker-data/tmp/windsurf-workspace:/tmp/windsurf-workspace
+    deploy:
+      replicas: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: windsurf-lb
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3003}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - windsurf-api

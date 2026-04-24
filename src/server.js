@@ -24,18 +24,12 @@ import { handleMessages } from './handlers/messages.js';
 import { handleModels } from './handlers/models.js';
 import { handleDashboardApi } from './dashboard/api.js';
 import { config, log } from './config.js';
+import { VERSION } from './version.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
 
-// Cache version info at boot — git queries are slow and this never changes
-// until a restart (and self-update restarts us, so always fresh).
 const VERSION_INFO = (() => {
-  let pkgVersion = '1.2.0';
-  try {
-    const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8'));
-    if (pkg.version) pkgVersion = pkg.version;
-  } catch {}
   let commit = '', commitMessage = '', commitDate = '', branch = 'unknown';
   if (existsSync(join(REPO_ROOT, '.git'))) {
     try { commit = execSync('git rev-parse --short HEAD', { cwd: REPO_ROOT, timeout: 2000 }).toString().trim(); } catch {}
@@ -43,7 +37,7 @@ const VERSION_INFO = (() => {
     try { commitDate = execSync('git log -1 --pretty=format:%cI', { cwd: REPO_ROOT, timeout: 2000 }).toString().trim(); } catch {}
     try { branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: REPO_ROOT, timeout: 2000 }).toString().trim(); } catch {}
   }
-  return { version: pkgVersion, commit, commitMessage, commitDate, branch };
+  return { version: VERSION, commit, commitMessage, commitDate, branch };
 })();
 
 // 10 MB is way above any realistic chat-completions payload while still
@@ -95,7 +89,7 @@ async function route(req, res) {
   if (method === 'OPTIONS') return json(res, 204, '');
   if (path === '/health') {
     const counts = getAccountCount();
-    return json(res, 200, {
+    const body = {
       status: 'ok',
       provider: 'WindsurfAPI bydwgx1337',
       version: VERSION_INFO.version,
@@ -105,7 +99,19 @@ async function route(req, res) {
       branch: VERSION_INFO.branch,
       uptime: Math.round(process.uptime()),
       accounts: counts,
-    });
+    };
+    const qs = new URL(req.url, 'http://localhost').searchParams;
+    if (qs.get('verbose') === '1' && validateApiKey(extractToken(req))) {
+      try {
+        const { poolStats } = await import('./conversation-pool.js');
+        const { cacheStats } = await import('./cache.js');
+        const { getLsStatus } = await import('./langserver.js');
+        body.conversationPool = poolStats();
+        body.cache = cacheStats();
+        body.lsPool = getLsStatus();
+      } catch {}
+    }
+    return json(res, 200, body);
   }
 
   // ─── Dashboard ─────────────────────────────────────────
@@ -254,6 +260,9 @@ async function route(req, res) {
       res.writeHead(result.status, { 'Access-Control-Allow-Origin': '*', ...result.headers });
       await result.handler(res);
     } else {
+      if (result.headers) {
+        for (const [k, v] of Object.entries(result.headers)) res.setHeader(k, v);
+      }
       json(res, result.status, result.body);
     }
     return;

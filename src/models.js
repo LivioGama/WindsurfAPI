@@ -35,14 +35,14 @@ export const MODELS = {
 
   // ── GPT ─────────────────────────────────────────────────
   'gpt-4o':                         { name: 'gpt-4o',                         provider: 'openai', enumValue: 109, modelUid: 'MODEL_CHAT_GPT_4O_2024_08_06', credit: 1 },
-  'gpt-4o-mini':                    { name: 'gpt-4o-mini',                    provider: 'openai', enumValue: 113, credit: 0.5 },
+  'gpt-4o-mini':                    { name: 'gpt-4o-mini',                    provider: 'openai', enumValue: 113, credit: 0.5, deprecated: true },
   'gpt-4.1':                        { name: 'gpt-4.1',                        provider: 'openai', enumValue: 259, modelUid: 'MODEL_CHAT_GPT_4_1_2025_04_14', credit: 1 },
-  'gpt-4.1-mini':                   { name: 'gpt-4.1-mini',                   provider: 'openai', enumValue: 260, credit: 0.5 },
-  'gpt-4.1-nano':                   { name: 'gpt-4.1-nano',                   provider: 'openai', enumValue: 261, credit: 0.25 },
+  'gpt-4.1-mini':                   { name: 'gpt-4.1-mini',                   provider: 'openai', enumValue: 260, credit: 0.5, deprecated: true },
+  'gpt-4.1-nano':                   { name: 'gpt-4.1-nano',                   provider: 'openai', enumValue: 261, credit: 0.25, deprecated: true },
   'gpt-5':                          { name: 'gpt-5',                          provider: 'openai', enumValue: 340, modelUid: 'MODEL_PRIVATE_6', credit: 0.5 },
   'gpt-5-medium':                   { name: 'gpt-5-medium',                   provider: 'openai', enumValue: 0,   modelUid: 'MODEL_PRIVATE_7', credit: 1 },
   'gpt-5-high':                     { name: 'gpt-5-high',                     provider: 'openai', enumValue: 0,   modelUid: 'MODEL_PRIVATE_8', credit: 2 },
-  'gpt-5-mini':                     { name: 'gpt-5-mini',                     provider: 'openai', enumValue: 337, credit: 0.25 },
+  'gpt-5-mini':                     { name: 'gpt-5-mini',                     provider: 'openai', enumValue: 337, credit: 0.25, deprecated: true },
   'gpt-5-codex':                    { name: 'gpt-5-codex',                    provider: 'openai', enumValue: 346, modelUid: 'MODEL_CHAT_GPT_5_CODEX', credit: 0.5 },
 
   // GPT-5.1
@@ -122,18 +122,18 @@ export const MODELS = {
   'gemini-3.1-pro-high':            { name: 'gemini-3.1-pro-high',            provider: 'google', enumValue: 0,   modelUid: 'gemini-3-1-pro-high', credit: 2 },
 
   // ── DeepSeek ────────────────────────────────────────────
-  'deepseek-v3':                    { name: 'deepseek-v3',                    provider: 'deepseek', enumValue: 205, credit: 0.5 },
-  'deepseek-v3-2':                  { name: 'deepseek-v3-2',                  provider: 'deepseek', enumValue: 409, credit: 0.5 },
-  'deepseek-r1':                    { name: 'deepseek-r1',                    provider: 'deepseek', enumValue: 206, credit: 1 },
+  'deepseek-v3':                    { name: 'deepseek-v3',                    provider: 'deepseek', enumValue: 205, credit: 0.5, deprecated: true },
+  'deepseek-v3-2':                  { name: 'deepseek-v3-2',                  provider: 'deepseek', enumValue: 409, credit: 0.5, deprecated: true },
+  'deepseek-r1':                    { name: 'deepseek-r1',                    provider: 'deepseek', enumValue: 206, credit: 1, deprecated: true },
 
   // ── Grok ────────────────────────────────────────────────
   'grok-3':                         { name: 'grok-3',                         provider: 'xai', enumValue: 217, modelUid: 'MODEL_XAI_GROK_3', credit: 1 },
-  'grok-3-mini':                    { name: 'grok-3-mini',                    provider: 'xai', enumValue: 234, credit: 0.5 },
+  'grok-3-mini':                    { name: 'grok-3-mini',                    provider: 'xai', enumValue: 234, credit: 0.5, deprecated: true },
   'grok-3-mini-thinking':           { name: 'grok-3-mini-thinking',           provider: 'xai', enumValue: 0,   modelUid: 'MODEL_XAI_GROK_3_MINI_REASONING', credit: 0.125 },
   'grok-code-fast-1':               { name: 'grok-code-fast-1',               provider: 'xai', enumValue: 0,   modelUid: 'MODEL_PRIVATE_4', credit: 0.5 },
 
   // ── Qwen ────────────────────────────────────────────────
-  'qwen-3':                         { name: 'qwen-3',                         provider: 'alibaba', enumValue: 324, credit: 0.5 },
+  'qwen-3':                         { name: 'qwen-3',                         provider: 'alibaba', enumValue: 324, credit: 0.5, deprecated: true },
   // qwen-3-coder + qwen-3-coder-fast: exist in binary enum (325/327)
   // but cascade server doesn't have any routing registered for them —
   // both enum-only and explicit UIDs fail with 'model not found'.
@@ -302,13 +302,17 @@ export function getModelKeysByEnum(enumValue) {
 
 // ─── Tier access ───────────────────────────────────────────
 
-const ALL_MODEL_KEYS = Object.keys(MODELS);
-const FREE_TIER_MODELS = ['gpt-4o-mini', 'gemini-2.5-flash'];
+const FREE_TIER_BASE = ['gemini-2.5-flash'];
+const _discoveredFreeModels = new Set();
+
+export function registerDiscoveredFreeModel(key) {
+  if (MODELS[key] && !FREE_TIER_BASE.includes(key)) _discoveredFreeModels.add(key);
+}
 
 export const MODEL_TIER_ACCESS = {
   get pro() { return Object.keys(MODELS); },
-  free: FREE_TIER_MODELS,
-  unknown: FREE_TIER_MODELS,
+  get free() { return [...FREE_TIER_BASE, ..._discoveredFreeModels]; },
+  get unknown() { return [...FREE_TIER_BASE, ..._discoveredFreeModels]; },
   expired: [],
 };
 
@@ -317,16 +321,18 @@ export function getTierModels(tier) {
   return MODEL_TIER_ACCESS[tier] || MODEL_TIER_ACCESS.unknown;
 }
 
-/** List all models in OpenAI /v1/models format. */
+/** List all models in OpenAI /v1/models format. Hides deprecated models. */
 export function listModels() {
   const ts = Math.floor(Date.now() / 1000);
-  return Object.entries(MODELS).map(([id, info]) => ({
-    id: info.name,
-    object: 'model',
-    created: ts,
-    owned_by: info.provider,
-    _windsurf_id: id,
-  }));
+  return Object.entries(MODELS)
+    .filter(([, info]) => !info.deprecated)
+    .map(([id, info]) => ({
+      id: info.name,
+      object: 'model',
+      created: ts,
+      owned_by: info.provider,
+      _windsurf_id: id,
+    }));
 }
 
 /**

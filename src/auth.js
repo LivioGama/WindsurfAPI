@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'fs';
 import { config, log } from './config.js';
 import { getEffectiveProxy } from './dashboard/proxy-config.js';
-import { getTierModels, getModelKeysByEnum, MODELS } from './models.js';
+import { getTierModels, getModelKeysByEnum, MODELS, registerDiscoveredFreeModel } from './models.js';
 
 import { join } from 'path';
 const ACCOUNTS_FILE = join(config.dataDir, 'accounts.json');
@@ -736,6 +736,9 @@ export function updateCapability(apiKey, modelKey, ok, reason = '') {
     lastCheck: Date.now(),
     reason,
   };
+  if (ok && (account.tier === 'free' || account.tier === 'unknown')) {
+    registerDiscoveredFreeModel(modelKey);
+  }
   account.tier = inferTier(account.capabilities);
   saveAccounts();
 }
@@ -835,13 +838,11 @@ export async function fetchUserStatus(id) {
 // Order matters: free-tier models first so tier can be inferred early even if
 // later requests rate-limit. modelUid-only entries cover the 4.6 series since
 // GetUserStatus's allowlist is enum-keyed.
+// Only probe cheap/non-rate-limited models. Claude models burn Trial quota
+// fast (2-3 req/hr) — GetUserStatus enum allowlist already covers them.
 const PROBE_CANARIES = [
-  'gpt-4o-mini',
   'gemini-2.5-flash',
-  'claude-sonnet-4.6',
-  'claude-opus-4.6',
   'gemini-3.0-flash',
-  'claude-4.5-sonnet',
 ];
 
 /**
@@ -913,6 +914,53 @@ export async function probeAccount(id) {
         }
       }
     }
+  }
+
+  // ── Step 3: dynamic cloud candidate probe (#42) ──
+  // Probe models from the live cloud catalog that aren't in PROBE_CANARIES
+  // and haven't been classified yet. This discovers models available to free
+  // accounts beyond the hardcoded FREE_TIER_MODELS list.
+  try {
+    const allModels = Object.keys(MODELS);
+    const alreadyProbed = new Set([
+      ...PROBE_CANARIES,
+      ...Object.keys(account.capabilities || {}),
+    ]);
+    const MAX_CLOUD_PROBES = positiveIntEnv('MAX_CLOUD_PROBES', 10);
+    const cloudCandidates = allModels.filter(k => {
+      if (alreadyProbed.has(k)) return false;
+      const info = getModelInfo(k);
+      if (!info?.modelUid) return false;
+      if (info.enumValue > 0 && status) return false;
+      if ((info.credit || 1) > 2) return false;
+      return true;
+    }).slice(0, MAX_CLOUD_PROBES);
+
+    if (cloudCandidates.length > 0) {
+      log.info(`Dynamic cloud probe: ${cloudCandidates.length} candidates for ${account.email} (cap=${MAX_CLOUD_PROBES})`);
+      let rateLimited = false;
+      for (const modelKey of cloudCandidates) {
+        if (rateLimited) break;
+        const info = getModelInfo(modelKey);
+        if (!info) continue;
+        const client = new WindsurfClient(account.apiKey, port, csrf);
+        try {
+          await client.cascadeChat([{ role: 'user', content: 'hi' }], info.enumValue, info.modelUid);
+          updateCapability(account.apiKey, modelKey, true, 'cloud_probe');
+          log.info(`  cloud ${modelKey}: OK`);
+        } catch (err) {
+          if (/rate limit|rate_limit|too many requests|quota/i.test(err.message)) {
+            log.info(`  cloud ${modelKey}: RATE_LIMITED — stopping probe`);
+            rateLimited = true;
+          } else {
+            updateCapability(account.apiKey, modelKey, false, 'cloud_probe');
+            log.debug(`  cloud ${modelKey}: FAIL`);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    log.warn(`Dynamic cloud probe failed: ${e.message}`);
   }
 
   // If GetUserStatus succeeded, its tier decision wins over the inferred one
