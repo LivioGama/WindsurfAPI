@@ -16,6 +16,33 @@ describe('ToolCallStreamParser', () => {
     assert.ok(r.text.includes('Here is the result:'));
   });
 
+  it('parses <tool_call> without closing tag (SWE-1.x style)', () => {
+    const parser = new ToolCallStreamParser();
+    const r = parser.feed(
+      'I will list both.<tool_call>{"name":"list_directory","arguments":{"path":"a"}}<tool_call>{"name":"list_directory","arguments":{"path":"b"}}'
+    );
+    const flush = parser.flush();
+    const allCalls = [...r.toolCalls, ...flush.toolCalls];
+    assert.equal(allCalls.length, 2, `expected 2 tool calls, got ${allCalls.length}`);
+    assert.equal(allCalls[0].name, 'list_directory');
+    assert.equal(JSON.parse(allCalls[0].argumentsJson).path, 'a');
+    assert.equal(allCalls[1].name, 'list_directory');
+    assert.equal(JSON.parse(allCalls[1].argumentsJson).path, 'b');
+    assert.ok(!r.text.includes('<tool_call>'), `leaked tool_call in text: ${r.text}`);
+  });
+
+  it('parses <tool_call> with JSON body then explicit closer', () => {
+    const parser = new ToolCallStreamParser();
+    const r = parser.feed(
+      '<tool_call>{"name":"Read","arguments":{"path":"x"}}</tool_call> after text'
+    );
+    const flush = parser.flush();
+    const allCalls = [...r.toolCalls, ...flush.toolCalls];
+    assert.equal(allCalls.length, 1);
+    assert.equal(allCalls[0].name, 'Read');
+    assert.ok(r.text.includes(' after text'));
+  });
+
   it('parses bare JSON tool calls', () => {
     const parser = new ToolCallStreamParser();
     const r = parser.feed(

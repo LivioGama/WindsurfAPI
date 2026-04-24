@@ -327,7 +327,43 @@ export class ToolCallStreamParser {
       }
 
       // ── Inside a <tool_call>…</tool_call> block — parse JSON body ──
+      // SWE-1.x models often emit `<tool_call>{...}` WITHOUT the `</tool_call>`
+      // closer, concatenating the next `<tool_call>` or plain text right after
+      // the JSON's closing brace. We accept both forms: if the body starts with
+      // `{`, close on the matching `}` (and consume an optional trailing closer).
       if (this.inToolCall) {
+        const leading = this.buffer.match(/^\s*/)[0];
+        const afterLeading = this.buffer.slice(leading.length);
+
+        if (afterLeading.startsWith('{')) {
+          const savedBuffer = this.buffer;
+          this.buffer = afterLeading;
+          const endIdx = this._findClosingBrace();
+          if (endIdx === -1) { this.buffer = savedBuffer; break; }
+          const body = this.buffer.slice(0, endIdx + 1);
+          this.buffer = this.buffer.slice(endIdx + 1);
+          const trimmedRest = this.buffer.replace(/^\s+/, '');
+          if (trimmedRest.startsWith(TC_CLOSE)) {
+            this.buffer = trimmedRest.slice(TC_CLOSE.length);
+          }
+          this.inToolCall = false;
+          const parsed = safeParseJson(body);
+          if (parsed && typeof parsed.name === 'string') {
+            const args = parsed.arguments;
+            const argsJson = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+            log.debug(`ToolParser: matched xml(json-body) format, name=${parsed.name}`);
+            doneCalls.push({
+              id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
+              name: parsed.name,
+              argumentsJson: argsJson,
+            });
+            this._totalSeen++;
+          } else {
+            safeParts.push(`<tool_call>${body}`);
+          }
+          continue;
+        }
+
         const closeIdx = this.buffer.indexOf(TC_CLOSE);
         if (closeIdx === -1) break;
         const body = this.buffer.slice(0, closeIdx).trim();
