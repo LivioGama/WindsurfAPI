@@ -260,12 +260,16 @@ export async function handleChatCompletions(body) {
   const hasToolHistory = Array.isArray(messages) && messages.some(m => m?.role === 'tool' || (m?.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length));
   const emulateTools = useCascade && (hasTools || hasToolHistory);
   // Build proto-level preamble (goes into tool_calling_section override).
-  // Also inject into the last user message as fallback — some models in
-  // NO_TOOL mode ignore the SectionOverride entirely and refuse to call
-  // tools unless they see the definitions in the conversation itself. (#22)
+  // Previously we ALSO injected into the last user message as a fallback
+  // (#22), but with 15+ OpenCode tools that text block is 50KB+ and eats
+  // the entire context window of small models like SWE-1.6-fast, causing
+  // the model to lose track of the actual task on every tool-result turn.
+  // The proto field is sufficient — SWE models follow it correctly.
+  // Pass [] to normalizeMessagesForCascade so it still converts tool/
+  // assistant message formats without re-injecting the tool definitions.
   const toolPreamble = emulateTools ? buildToolPreambleForProto(tools || [], tool_choice) : '';
   let cascadeMessages = emulateTools
-    ? normalizeMessagesForCascade(messages, tools)
+    ? normalizeMessagesForCascade(messages, [])
     : [...messages];
 
   // Language-following hint for CJK users (#35)
