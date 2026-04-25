@@ -235,7 +235,14 @@ export function normalizeMessagesForCascade(messages, tools) {
     for (let i = out.length - 1; i >= 0; i--) {
       if (out[i].role === 'user') {
         const cur = typeof out[i].content === 'string' ? out[i].content : JSON.stringify(out[i].content ?? '');
-        out[i] = { ...out[i], content: preamble + '\n\n' + cur };
+        // Skip preamble injection when the message is pure tool results — the model
+        // already has the tool context from prior turns. Injecting the full preamble
+        // here causes the model to see a huge "orchestrator configuration" as if the
+        // user just sent it, leading to confusion about what the actual task is.
+        const isOnlyToolResults = /^(\s*<tool_result[\s\S]*?<\/tool_result>\s*)+$/.test(cur);
+        if (!isOnlyToolResults) {
+          out[i] = { ...out[i], content: preamble + '\n\n' + cur };
+        }
         break;
       }
     }
