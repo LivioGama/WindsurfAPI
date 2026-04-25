@@ -378,6 +378,7 @@ export class WindsurfClient {
         const maxHistoryBytes = cascadeHistoryBudget(modelUid);
         const lines = [];
         let historyBytes = sysText ? sysText.length : 0;
+        let historyIncludesFirstTurn = false;
         for (let i = convo.length - 2; i >= 0; i--) {
           const m = convo[i];
           const tag = m.role === 'user' ? 'human' : 'assistant';
@@ -388,12 +389,17 @@ export class WindsurfClient {
           }
           lines.unshift(line);
           historyBytes += line.length;
+          if (i === 0) historyIncludesFirstTurn = true;
         }
         const latest = convo[convo.length - 1];
         const extracted = await extractImages(latest?.content ?? '');
         text = `The following is a multi-turn conversation. You MUST remember and use all information from prior turns.\n\n${lines.join('\n\n')}\n\n<human>\n${extracted.text}\n</human>`;
         images = extracted.images;
-        if (sysText) text = sysText + '\n\n' + text;
+        // sysText was baked into the first user turn on the initial request — don't
+        // prepend it again here or the model sees it as a new incoming user message
+        // ("the user just sent me a long orchestrator description"). Only re-inject
+        // if the first turn was trimmed from history (context budget exceeded).
+        if (sysText && !historyIncludesFirstTurn) text = sysText + '\n\n' + text;
       }
       if (images.length) log.info(`Cascade: attaching ${images.length} image(s) to field 6`);
 
