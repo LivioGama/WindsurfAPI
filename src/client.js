@@ -93,24 +93,15 @@ function ensureWorkspaceDir(workspacePath) {
   try {
     if (!existsSync(workspacePath)) {
       mkdirSync(workspacePath, { recursive: true });
-      // Seed a minimal project so the LS has something to index
-      writeFileSync(`${workspacePath}/package.json`, JSON.stringify({
-        name: 'my-project', version: '0.1.0', private: true,
-        description: 'A development project',
-        scripts: { start: 'node src/index.js', test: 'node --test' },
-        license: 'MIT',
-      }, null, 2) + '\n');
-      writeFileSync(`${workspacePath}/README.md`, '# My Project\n\nA development project.\n\n## Getting Started\n\n```bash\nnpm start\n```\n');
-      writeFileSync(`${workspacePath}/.gitignore`, 'node_modules/\n.env\ndist/\n*.log\n');
-      mkdirSync(`${workspacePath}/src`, { recursive: true });
-      writeFileSync(`${workspacePath}/src/index.js`, '// Entry point\nconsole.log("Hello, world!");\n');
-      // Init git repo so LS picks up real git state
+      // Empty dir — no scaffold files. Seeding files here causes the LS to
+      // inject them into the model's workspace context, making the model believe
+      // those are the actual project files and ignore tool results.
       try {
-        execSync('git init -q && git add -A && git commit -q -m "init" --allow-empty', {
+        execSync('git init -q && git commit -q -m "init" --allow-empty', {
           cwd: workspacePath, stdio: 'ignore', timeout: 5000,
         });
       } catch {}
-      log.info(`Workspace scaffold created: ${workspacePath}`);
+      log.info(`Workspace dir created: ${workspacePath}`);
     }
     _seededWorkspaces.add(workspacePath);
   } catch (e) {
