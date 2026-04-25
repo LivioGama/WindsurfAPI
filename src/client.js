@@ -403,6 +403,7 @@ export class WindsurfClient {
       }
       if (images.length) log.info(`Cascade: attaching ${images.length} image(s) to field 6`);
 
+      log.info(`Cascade[send]: isResume=${isResume} convo=${convo.length} textLen=${text.length} textHead=${JSON.stringify(text.slice(0, 120))}`);
       // Step 2: Send message (retry once on panel-state-not-found)
       const sendMessage = async () => {
         const sendProto = buildSendCascadeMessageRequest(this.apiKey, cascadeId, text, modelEnum, modelUid, sessionId, { toolPreamble, images });
