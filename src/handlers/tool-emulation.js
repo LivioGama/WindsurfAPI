@@ -151,6 +151,38 @@ function safeParseJson(s) {
 }
 
 /**
+ * Parse SWE-1.x <arg_key>KEY=VALUE pairs from the chunk between the tool
+ * name and </tool_call>. Handles:
+ *   <arg_key>KEY="VALUE"   quoted
+ *   <arg_key>KEY='VALUE'   single-quoted
+ *   <arg_key>KEY=VALUE     unquoted (until whitespace)
+ *   <arg_key>KEYVALUE      no equals: key = leading identifier, value = rest
+ */
+function parseArgKeyPairs(chunk) {
+  const args = {};
+  for (const part of chunk.split('<arg_key>')) {
+    if (!part) continue;
+    // KEY="VALUE" or KEY='VALUE'
+    const quotedMatch = part.match(/^([A-Za-z_][\w]*)=(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/);
+    if (quotedMatch) {
+      args[quotedMatch[1]] = (quotedMatch[2] ?? quotedMatch[3] ?? '').replace(/\\"/g, '"').replace(/\\'/g, "'");
+      continue;
+    }
+    // KEY=VALUE (unquoted, to whitespace or end)
+    const unquotedMatch = part.match(/^([A-Za-z_][\w]*)=(\S+)/);
+    if (unquotedMatch) { args[unquotedMatch[1]] = unquotedMatch[2]; continue; }
+    // KEY[separator]VALUE — key = leading identifier, value = everything after
+    const noEqMatch = part.match(/^([A-Za-z_][\w\-.]*)([^A-Za-z0-9_\-.][\s\S]*)?$/);
+    if (noEqMatch) {
+      const key = noEqMatch[1];
+      const val = (noEqMatch[2] ?? '').replace(/^[\s=]+/, '').trim();
+      if (key) args[key] = val;
+    }
+  }
+  return args;
+}
+
+/**
  * Normalise an OpenAI messages[] array into a form Cascade understands.
  * - Prepends the tool preamble as a system message (or merges into the first system message)
  * - Rewrites role:"tool" messages as user turns with <tool_result> wrappers
@@ -230,7 +262,7 @@ const TOOL_PARSE_MODE = process.env.TOOL_PARSE_MODE || 'auto';
 // <arg_value>..., <parameters>, etc.) alongside the canonical <tool_call>
 // JSON blocks. Strip these artifacts from plain-text deltas so clients don't
 // render stray tags.
-const CASCADE_ARTIFACT_RE = /<\/?(?:arg_name|arg_value|parameters|parameter|tool_name|invoke|function_calls|think|thinking|thought|reasoning)(?:\s[^>]*)?>/g;
+const CASCADE_ARTIFACT_RE = /<\/?(?:arg_name|arg_key|arg_value|parameters|parameter|tool_name|invoke|function_calls|think|thinking|thought|reasoning)(?:\s[^>]*)?>/g;
 function stripCascadeArtifacts(text) {
   if (!text) return text;
   return text.replace(CASCADE_ARTIFACT_RE, '');
@@ -435,6 +467,30 @@ export class ToolCallStreamParser {
           continue;
         }
 
+        // `<tool_call>NAME<arg_key>...` — SWE-1.x XML child-element style.
+        // e.g. <tool_call>glob<arg_key>pattern**/FastAgent/</tool_call>
+        //      <tool_call>bash<arg_key>command="ls -la"<arg_key>description="..."</tool_call>
+        const argKeyNameMatch = afterLeading.match(/^([A-Za-z_][\w\-.]*)(?=<arg_key>)/);
+        if (argKeyNameMatch) {
+          const savedBuffer = this.buffer;
+          const name = argKeyNameMatch[1];
+          const rest = afterLeading.slice(name.length);
+          const nextClose = rest.indexOf(TC_CLOSE);
+          if (nextClose === -1) { this.buffer = savedBuffer; break; }
+          const argKeyChunk = rest.slice(0, nextClose);
+          this.buffer = rest.slice(nextClose + TC_CLOSE.length);
+          this.inToolCall = false;
+          const args = parseArgKeyPairs(argKeyChunk);
+          log.debug(`ToolParser: matched xml(name-then-arg_key) format, name=${name}`);
+          doneCalls.push({
+            id: `call_${this._totalSeen}_${Date.now().toString(36)}`,
+            name,
+            argumentsJson: JSON.stringify(args),
+          });
+          this._totalSeen++;
+          continue;
+        }
+
         const closeIdx = this.buffer.indexOf(TC_CLOSE);
         if (closeIdx === -1) break;
         const body = this.buffer.slice(0, closeIdx).trim();
@@ -571,6 +627,18 @@ export class ToolCallStreamParser {
           const v = am[2] ?? am[3] ?? am[4] ?? '';
           args[k] = v.replace(/\\"/g, '"').replace(/\\'/g, "'");
         }
+        return { text: '', toolCalls: [{
+          id: `call_${this._totalSeen++}_${Date.now().toString(36)}`,
+          name,
+          argumentsJson: JSON.stringify(args),
+        }] };
+      }
+      // SWE-1.x arg_key format at flush time (no closing tag)
+      const argKeyFlushMatch = body.match(/^([A-Za-z_][\w\-.]*)(?=<arg_key>)/);
+      if (argKeyFlushMatch) {
+        const name = argKeyFlushMatch[1];
+        const argKeyChunk = body.slice(name.length);
+        const args = parseArgKeyPairs(argKeyChunk);
         return { text: '', toolCalls: [{
           id: `call_${this._totalSeen++}_${Date.now().toString(36)}`,
           name,
