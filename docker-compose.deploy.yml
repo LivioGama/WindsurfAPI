@@ -1,0 +1,37 @@
+services:
+  windsurf-api:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      PORT: 3003
+      DATA_DIR: /data
+      LS_BINARY_PATH: /opt/windsurf/language_server_linux_x64
+      REPLICA_ISOLATE: 1
+    expose:
+      - "3003"
+    volumes:
+      - ./.docker-data/data:/data
+      - ./.docker-data/opt/windsurf:/opt/windsurf
+      - ./.docker-data/tmp/windsurf-workspace:/tmp/windsurf-workspace
+    deploy:
+      replicas: 3
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - windsurf-api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.windsurf-api.rule=Host(`windsurf.liviogama.com`)"
+      - "traefik.http.routers.windsurf-api.entrypoints=websecure"
+      - "traefik.http.routers.windsurf-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.windsurf-api.loadbalancer.server.port=80"
+      - "traefik.http.routers.windsurf-api-http.rule=Host(`windsurf.liviogama.com`)"
+      - "traefik.http.routers.windsurf-api-http.entrypoints=web"
+      - "traefik.http.routers.windsurf-api-http.middlewares=redirect-to-https@docker"
