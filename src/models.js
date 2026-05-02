@@ -270,6 +270,20 @@ const CURSOR_ALIASES = {
 };
 for (const [k, v] of Object.entries(CURSOR_ALIASES)) _lookup.set(k, v);
 
+// When clients send any Claude API model name that isn't natively available in
+// Windsurf (e.g. the ACP CLI's default haiku model), route to swe-1.6-fast.
+const FALLBACK_TO_SWE = [
+  'claude-haiku-4-5',
+  'claude-haiku-4-5-20251001',
+  'claude-3-haiku-20240307',
+  'claude-3-5-haiku-20241022',
+  'claude-3-5-haiku-latest',
+  'claude-haiku-4-0',
+  'claude-haiku-4-1',
+  'claude-haiku-4-2',
+];
+for (const k of FALLBACK_TO_SWE) _lookup.set(k, 'swe-1.6-fast');
+
 /** Resolve user model name → internal model key. */
 export function resolveModel(name) {
   if (!name) return null;
@@ -302,7 +316,9 @@ export function getModelKeysByEnum(enumValue) {
 
 // ─── Tier access ───────────────────────────────────────────
 
-const FREE_TIER_BASE = ['gemini-2.5-flash'];
+// Windsurf-native SWE models are accessible to any authenticated account
+// (not locked behind pro tier) — include them in the free/unknown baseline.
+const FREE_TIER_BASE = ['gemini-2.5-flash', 'swe-1.6-fast', 'swe-1.6', 'swe-1.5-fast', 'swe-1.5'];
 const _discoveredFreeModels = new Set();
 
 export function registerDiscoveredFreeModel(key) {
