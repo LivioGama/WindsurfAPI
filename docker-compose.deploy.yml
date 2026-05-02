@@ -3,8 +3,6 @@ services:
     build: .
     restart: unless-stopped
     init: true
-    env_file:
-      - .env
     environment:
       PORT: 3003
       DATA_DIR: /data
