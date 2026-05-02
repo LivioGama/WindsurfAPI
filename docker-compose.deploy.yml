@@ -6,7 +6,7 @@ services:
     environment:
       PORT: 3003
       DATA_DIR: /data
-      LS_BINARY_PATH: /opt/windsurf/language_server_linux_x64
+      LS_BINARY_PATH: /app/language_server_linux_x64
       REPLICA_ISOLATE: 1
     expose:
       - "3003"

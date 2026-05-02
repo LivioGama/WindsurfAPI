@@ -3,7 +3,7 @@ FROM node:20-bookworm-slim
 ENV NODE_ENV=production \
     PORT=3003 \
     DATA_DIR=/data \
-    LS_BINARY_PATH=/opt/windsurf/language_server_linux_x64 \
+    LS_BINARY_PATH=/app/language_server_linux_x64 \
     LS_PORT=42100
 
 WORKDIR /app
@@ -19,7 +19,8 @@ COPY install-ls.sh setup.sh .env.example ./
 RUN sed -i 's/\r$//' install-ls.sh setup.sh \
     && chmod +x install-ls.sh setup.sh \
     && mkdir -p /data /opt/windsurf/data/db /tmp/windsurf-workspace \
-    && (./install-ls.sh || curl -fL https://github.com/Exafunction/codeium/releases/latest/download/language_server_linux_x64 -o /opt/windsurf/language_server_linux_x64 && chmod +x /opt/windsurf/language_server_linux_x64) || true
+    && curl -fL https://github.com/Exafunction/codeium/releases/latest/download/language_server_linux_x64 -o /app/language_server_linux_x64 \
+    && chmod +x /app/language_server_linux_x64
 
 EXPOSE 3003
 
