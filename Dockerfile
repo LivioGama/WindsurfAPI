@@ -19,7 +19,7 @@ COPY install-ls.sh setup.sh .env.example ./
 RUN sed -i 's/\r$//' install-ls.sh setup.sh \
     && chmod +x install-ls.sh setup.sh \
     && mkdir -p /data /opt/windsurf/data/db /tmp/windsurf-workspace \
-    && ./install-ls.sh
+    && (./install-ls.sh || curl -fL https://github.com/Exafunction/codeium/releases/latest/download/language_server_linux_x64 -o /opt/windsurf/language_server_linux_x64 && chmod +x /opt/windsurf/language_server_linux_x64) || true
 
 EXPOSE 3003
 
