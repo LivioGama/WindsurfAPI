@@ -13,9 +13,9 @@ services:
     expose:
       - "3003"
     volumes:
-      - ./.docker-data/data:/data
-      - ./.docker-data/opt/windsurf:/opt/windsurf
-      - ./.docker-data/tmp/windsurf-workspace:/tmp/windsurf-workspace
+      - windsurf-data:/data
+      - windsurf-opt:/opt/windsurf
+      - windsurf-tmp:/tmp/windsurf-workspace
     deploy:
       replicas: 3
     labels:
@@ -26,3 +26,8 @@ services:
       - traefik.http.routers.windsurf.middlewares=redirect-to-https@file
       - traefik.http.routers.windsurf.tls.certresolver=letsencrypt
       - traefik.http.services.windsurf.loadbalancer.server.port=3003
+
+volumes:
+  windsurf-data:
+  windsurf-opt:
+  windsurf-tmp:

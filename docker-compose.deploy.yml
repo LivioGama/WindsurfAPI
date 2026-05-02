@@ -11,9 +11,9 @@ services:
     expose:
       - "3003"
     volumes:
-      - ./.docker-data/data:/data
-      - ./.docker-data/opt/windsurf:/opt/windsurf
-      - ./.docker-data/tmp/windsurf-workspace:/tmp/windsurf-workspace
+      - windsurf-data:/data
+      - windsurf-opt:/opt/windsurf
+      - windsurf-tmp:/tmp/windsurf-workspace
     deploy:
       replicas: 3
 
@@ -33,3 +33,8 @@ services:
       - "traefik.http.routers.windsurf-api-http.rule=Host(`windsurf.liviogama.com`)"
       - "traefik.http.routers.windsurf-api-http.entrypoints=web"
       - "traefik.http.routers.windsurf-api-http.middlewares=redirect-to-https@docker"
+
+volumes:
+  windsurf-data:
+  windsurf-opt:
+  windsurf-tmp:
