@@ -21,11 +21,6 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.windsurf.rule=Host(`windsurf.liviogama.com`)
-      - traefik.http.routers.windsurf.entrypoints=web,websecure
-      - traefik.http.routers.windsurf.middlewares=redirect-to-https@file
-      - traefik.http.routers.windsurf.tls.certresolver=letsencrypt
-      - traefik.http.services.windsurf.loadbalancer.server.port=3003
 
 volumes:
   windsurf-data:
